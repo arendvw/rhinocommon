@@ -90,7 +90,7 @@ namespace Rhino.Input.Custom
         IntPtr ptr = ConstPointer();
         int argb = 0;
         int abgr = UnsafeNativeMethods.CRhinoGetPoint_DynamicDrawColor(ptr, ref argb, false);
-        return System.Drawing.ColorTranslator.FromWin32(abgr);
+        return Rhino.Runtime.Interop.ColorFromWin32(abgr);
       }
       set
       {
@@ -780,6 +780,11 @@ namespace Rhino.Input.Custom
 
     /// <summary>Default calls the DynamicDraw event.</summary>
     /// <param name="e">Current argument for the event.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_getpointdynamicdraw.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_getpointdynamicdraw.cs' lang='cs'/>
+    /// <code source='examples\py\ex_getpointdynamicdraw.py' lang='py'/>
+    /// </example>
     protected virtual void OnDynamicDraw(GetPointDrawEventArgs e)
     {
       if (DynamicDraw != null)

@@ -8,7 +8,7 @@ namespace Rhino.Geometry
   /// </summary>
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 136)]
   [Serializable]
-  public struct Sphere
+  public struct Sphere : IEpsilonComparable<Sphere>
   {
     #region members
     internal Plane m_plane;
@@ -455,5 +455,17 @@ namespace Rhino.Geometry
       return RevSurface.CreateFromSphere(this);
     }
     #endregion
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Sphere other, double epsilon)
+    {
+      return m_plane.EpsilonEquals(other.m_plane, epsilon) &&
+             RhinoMath.EpsilonEquals(m_radius, other.m_radius, epsilon);
+    }
   }
 }

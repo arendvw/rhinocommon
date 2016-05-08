@@ -8,46 +8,58 @@
     <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>{74886b17-697e-41d1-a63f-a9ea3e5f9974}</ProjectGuid>
-    <SHFBSchemaVersion>1.9.3.0</SHFBSchemaVersion>
+    <SHFBSchemaVersion>1.9.9.0</SHFBSchemaVersion>
     <!-- AssemblyName, Name, and RootNamespace are not used by SHFB but Visual
          Studio adds them anyway -->
     <AssemblyName>Documentation</AssemblyName>
     <RootNamespace>Documentation</RootNamespace>
     <Name>Documentation</Name>
     <!-- SHFB properties -->
-    <OutputPath>.\Help\</OutputPath>
+    <OutputPath>Help\</OutputPath>
     <HtmlHelpName>RhinoCommon</HtmlHelpName>
     <DocumentationSources>
-      <DocumentationSource sourceFile="dotnet\Debug\RhinoCommon.dll" xmlns="" />
-      <DocumentationSource sourceFile="dotnet\Debug\RhinoCommon.xml" xmlns="" />
+      <DocumentationSource sourceFile="dotnet\Release\RhinoCommon.dll" />
+      <DocumentationSource sourceFile="dotnet\Release\RhinoCommon.xml" />
     </DocumentationSources>
     <HelpFileFormat>HtmlHelp1, Website</HelpFileFormat>
-    <CopyrightText>Report wishes and bugs: https://github.com/mcneel/rhinocommon/issues</CopyrightText>
-    <FeedbackEMailAddress>steve%40mcneel.com</FeedbackEMailAddress>
+    <CopyrightText>Report wishes and bugs: http://discourse.mcneel.com/</CopyrightText>
+    <FeedbackEMailAddress>
+    </FeedbackEMailAddress>
     <HelpTitle>RhinoCommon SDK</HelpTitle>
     <ProjectLinkType>Local</ProjectLinkType>
-    <SyntaxFilters>CSharp, VisualBasic</SyntaxFilters>
+    <SyntaxFilters>C#, Visual Basic</SyntaxFilters>
     <NamespaceSummaries>
       <NamespaceSummaryItem name="Rhino" isDocumented="True">Base namespace where we put classes that we couldn't figure out any good spot to put them.</NamespaceSummaryItem>
       <NamespaceSummaryItem name="Rhino.ApplicationSettings" isDocumented="True">Static settings global to the entire Rhino application</NamespaceSummaryItem>
       <NamespaceSummaryItem name="Rhino.Input" isDocumented="True">Classes related to getting user input for things like points, objects, and numbers</NamespaceSummaryItem>
     </NamespaceSummaries>
-    <FrameworkVersion>.NET 2.0.50727</FrameworkVersion>
+    <FrameworkVersion>.NET Framework 2.0</FrameworkVersion>
     <ComponentConfigurations>
       <ComponentConfig id="Code Block Component" enabled="True">
-        <component id="Code Block Component" type="SandcastleBuilder.Components.CodeBlockComponent" assembly="{@SHFBFolder}SandcastleBuilder.Components.dll">
+        <component id="Code Block Component">
           <basePath value="{@HtmlEncProjectFolder}" />
-          <languageFilter value="true" />
+          <outputPaths>{@HelpFormatOutputPaths}</outputPaths>
           <allowMissingSource value="false" />
           <removeRegionMarkers value="false" />
-          <colorizer syntaxFile="{@SHFBFolder}Colorizer\highlight.xml" styleFile="{@SHFBFolder}Colorizer\highlight.xsl" copyImageUrl="../icons/CopyCode.gif" language="cs" tabSize="4" numberLines="false" outlining="false" keepSeeTags="false" defaultTitle="true" />
+          <colorizer syntaxFile="{@SHFBFolder}PresentationStyles\Colorizer\highlight.xml" styleFile="{@SHFBFolder}PresentationStyles\Colorizer\highlight.xsl" stylesheet="{@SHFBFolder}PresentationStyles\Colorizer\highlight.css" scriptFile="{@SHFBFolder}PresentationStyles\Colorizer\highlight.js" disabled="{@DisableCodeBlockComponent}" language="cs" tabSize="0" numberLines="false" outlining="false" keepSeeTags="false" defaultTitle="true" />
         </component>
       </ComponentConfig>
     </ComponentConfigurations>
     <NamingMethod>MemberName</NamingMethod>
-    <PresentationStyle>vs2005</PresentationStyle>
-    <FooterText>Last updated 17 September 2012 - Robert McNeel and Associates</FooterText>
-    <CopyrightHref>https://github.com/mcneel/rhinocommon/issues</CopyrightHref>
+    <PresentationStyle>VS2005</PresentationStyle>
+    <FooterText>Updated 18 March 2015 - Robert McNeel and Associates %28Rhino 5 SR11%29</FooterText>
+    <CopyrightHref>http://discourse.mcneel.com/</CopyrightHref>
+    <HtmlHelp1xCompilerPath>..\..\..\..\..\..\Program Files (x86)\HTML Help Workshop\</HtmlHelp1xCompilerPath>
+    <SdkLinkTarget>Blank</SdkLinkTarget>
+    <RootNamespaceContainer>False</RootNamespaceContainer>
+    <Preliminary>False</Preliminary>
+    <Language>en-US</Language>
+    <ContentPlacement>AboveNamespaces</ContentPlacement>
+    <MaximumGroupParts>2</MaximumGroupParts>
+    <NamespaceGrouping>False</NamespaceGrouping>
+    <FeedbackEMailLinkText>http://discourse.mcneel.com/</FeedbackEMailLinkText>
+    <PlugInConfigurations />
+    <MissingTags>AutoDocumentCtors, AutoDocumentDispose</MissingTags>
   </PropertyGroup>
   <!-- There are no properties for these two groups but they need to appear in
        order for Visual Studio to perform the build. -->

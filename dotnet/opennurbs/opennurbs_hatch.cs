@@ -83,7 +83,30 @@ namespace Rhino.Geometry
     {
       return Create(new Curve[] { curve }, hatchPatternIndex, rotationRadians, scale);
     }
-#endif
+
+    /// <summary>
+    /// Generate geometry that would be used to draw the hatch with a given hatch pattern
+    /// </summary>
+    /// <param name="pattern"></param>
+    /// <param name="patternScale"></param>
+    /// <param name="bounds"></param>
+    /// <param name="lines"></param>
+    /// <param name="solidBrep"></param>
+    public void CreateDisplayGeometry(DocObjects.HatchPattern pattern, double patternScale, out Curve[] bounds, out Line[] lines, out Brep solidBrep)
+    {
+      IntPtr const_ptr_this = ConstPointer();
+      IntPtr const_ptr_pattern = pattern.ConstPointer();
+      using(var curve_array = new Runtime.InteropWrappers.SimpleArrayCurvePointer())
+      using(var line_array = new Runtime.InteropWrappers.SimpleArrayLine())
+      {
+        IntPtr ptr_curves = curve_array.NonConstPointer();
+        IntPtr ptr_lines = line_array.NonConstPointer();
+        IntPtr ptr_brep = UnsafeNativeMethods.CRhinoHatchPattern_CreateDisplay(const_ptr_this, const_ptr_pattern, patternScale, ptr_curves, ptr_lines);
+        solidBrep = (ptr_brep==IntPtr.Zero) ? null : new Brep(ptr_brep, null);
+        bounds = curve_array.ToNonConstArray();
+        lines = line_array.ToArray();
+      }
+    }
 
     /// <summary>
     /// Decomposes the hatch pattern into an array of geometry.
@@ -100,14 +123,12 @@ namespace Rhino.Geometry
       {
         IntPtr pParentRhinoObject = IntPtr.Zero;
 
-#if RHINO_SDK
         if (IsDocumentControlled)
         {
           Rhino.DocObjects.RhinoObject rhobj = ParentRhinoObject();
           if (rhobj != null)
             pParentRhinoObject = rhobj.ConstPointer();
         }
-#endif
         IntPtr pGeometryArray = geometry.NonConstPointer();
         IntPtr pConstThis = ConstPointer();
 
@@ -116,6 +137,7 @@ namespace Rhino.Geometry
         return rc;
       }
     }
+#endif
 
     /// <summary>
     /// Gets 3d curves that define the boundaries of the hatch
@@ -136,6 +158,11 @@ namespace Rhino.Geometry
     /// <summary>
     /// Gets or sets the index of the pattern in the document hatch pattern table.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_replacehatchpattern.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_replacehatchpattern.cs' lang='cs'/>
+    /// <code source='examples\py\ex_replacehatchpattern.py' lang='py'/>
+    /// </example>
     public int PatternIndex
     {
       get

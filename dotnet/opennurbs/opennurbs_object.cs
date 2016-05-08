@@ -1,6 +1,7 @@
 using System;
 using System.Runtime.Serialization;
 using System.Security.Permissions;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.Runtime
 {
@@ -238,7 +239,7 @@ namespace Rhino.Runtime
     public bool IsValidWithLog(out string log)
     {
       IntPtr pConstThis = ConstPointer();
-      using (StringHolder sh = new StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         bool rc = UnsafeNativeMethods.ON_Object_IsValid(pConstThis, pString);
@@ -296,9 +297,39 @@ namespace Rhino.Runtime
       if (IntPtr.Zero == m_ptr || m__parent is ConstCastHolder)
         return;
 
+      Geometry.MeshHolder mh = m__parent as Geometry.MeshHolder;
+      if (mh!=null)
+      {
+        mh.ReleaseMesh();
+      }
+
       if (m_bDestructOnDispose)
       {
-        UnsafeNativeMethods.ON_Object_Delete(m_ptr);
+        bool inFinalizer = !disposing;
+        if (inFinalizer)
+        {
+          // 11 Feb 2013 (S. Baer) RH-16157
+          // When running in the finalizer, the destructor is being called on the GC
+          // thread which results in nearly impossible to track down exceptions.
+          // Mask the exception in this case and post information to our logging system
+          // about the exception so we can better analyze and try to figure out what
+          // is going on
+          try
+          {
+            UnsafeNativeMethods.ON_Object_Delete(m_ptr);
+          }
+          catch (Exception ex)
+          {
+            HostUtils.ExceptionReport(ex);
+          }
+        }
+        else
+        {
+          // See above. In this case we are running on the main thread of execution
+          // and throwing an exception is a good thing so we can analyze and quickly
+          // fix whatever is going wrong
+          UnsafeNativeMethods.ON_Object_Delete(m_ptr);
+        }
         if (m_unmanaged_memory > 0)
           GC.RemoveMemoryPressure(m_unmanaged_memory);
       }
@@ -405,8 +436,12 @@ namespace Rhino.Runtime
     internal string _GetUserString(string key)
     {
       IntPtr pThis = ConstPointer();
-      IntPtr pValue = UnsafeNativeMethods.ON_Object_GetUserString(pThis, key);
-      return IntPtr.Zero == pValue ? String.Empty : System.Runtime.InteropServices.Marshal.PtrToStringUni(pValue);
+      using (var sh = new StringHolder())
+      {
+        IntPtr pStringHolder = sh.NonConstPointer();
+        UnsafeNativeMethods.ON_Object_GetUserString(pThis, key, pStringHolder);
+        return sh.ToString();
+      }
     }
 
     /// <summary>
@@ -433,14 +468,18 @@ namespace Rhino.Runtime
       int count = 0;
       IntPtr pUserStrings = UnsafeNativeMethods.ON_Object_GetUserStrings(pThis, ref count);
 
-      for (int i = 0; i < count; i++)
+      using( var keyHolder = new StringHolder() )
+      using( var valueHolder = new StringHolder() )
       {
-        IntPtr pKey = UnsafeNativeMethods.ON_UserStringList_KeyValue(pUserStrings, i, true);
-        IntPtr pValue = UnsafeNativeMethods.ON_UserStringList_KeyValue(pUserStrings, i, false);
-        if (IntPtr.Zero != pKey && IntPtr.Zero != pValue)
+        IntPtr pKeyHolder = keyHolder.NonConstPointer();
+        IntPtr pValueHolder = valueHolder.NonConstPointer();
+
+        for (int i = 0; i < count; i++)
         {
-          string key = System.Runtime.InteropServices.Marshal.PtrToStringUni(pKey);
-          string value = System.Runtime.InteropServices.Marshal.PtrToStringUni(pValue);
+          UnsafeNativeMethods.ON_UserStringList_KeyValue(pUserStrings, i, true, pKeyHolder);
+          UnsafeNativeMethods.ON_UserStringList_KeyValue(pUserStrings, i, false, pValueHolder);
+          string key = keyHolder.ToString();
+          string value = valueHolder.ToString();
           if (!string.IsNullOrEmpty(key) && !string.IsNullOrEmpty(value))
             rc.Add(key, value);
         }
@@ -464,6 +503,8 @@ namespace Rhino.Runtime
       int archive_opennurbs_version = info.GetInt32(ARCHIVE_OPENNURBS_VERSION);
       byte[] stream = info.GetValue("data", typeof(byte[])) as byte[];
       IntPtr rc = UnsafeNativeMethods.ON_ReadBufferArchive(archive_3dm_version, archive_opennurbs_version, stream.Length, stream);
+      if (IntPtr.Zero == rc)
+        throw new SerializationException("Unable to read ON_Object from binary archive");
       return rc;
     }
 
@@ -490,9 +531,14 @@ namespace Rhino.Runtime
 #else
       int rhino_version = (options != null) ? options.RhinoVersion : 5;
 #endif
+      // 28 Aug 2014 S. Baer (RH-28446)
+      // We switched to 50,60,70,... type numbers after Rhino 4
+      if (rhino_version > 4 && rhino_version < 50)
+        rhino_version *= 10;
+
       IntPtr pWriteBuffer = UnsafeNativeMethods.ON_WriteBufferArchive_NewWriter(pConstOnObject, rhino_version, writeuserdata, ref length);
 
-      if (length < int.MaxValue)
+      if (length < int.MaxValue && length > 0 && pWriteBuffer != IntPtr.Zero)
       {
         int sz = (int)length;
         IntPtr pByteArray = UnsafeNativeMethods.ON_WriteBufferArchive_Buffer(pWriteBuffer);

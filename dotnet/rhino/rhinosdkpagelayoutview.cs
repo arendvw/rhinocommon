@@ -6,8 +6,8 @@ namespace Rhino.Display
 {
   public class RhinoPageView : RhinoView
   {
-    internal RhinoPageView(IntPtr ptr, Guid mainviewport_id)
-      : base(ptr, mainviewport_id)
+    internal RhinoPageView(IntPtr ptr, Guid mainViewportId)
+      : base(ptr, mainViewportId)
     {
     }
 
@@ -196,6 +196,40 @@ namespace Rhino.Display
       {
         IntPtr pThis = NonConstPointer();
         UnsafeNativeMethods.CRhinoPageView_SetPageNumber(pThis, value);
+      }
+    }
+
+    /// <summary>
+    /// Width of the page in the document's PageUnitSystem
+    /// </summary>
+    public double PageWidth
+    {
+      get
+      {
+        IntPtr const_ptr_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoPageView_GetSize(const_ptr_this, true);
+      }
+      set
+      {
+        IntPtr ptr_this = NonConstPointer();
+        UnsafeNativeMethods.CRhinoPageView_SetSize(ptr_this, true, value);
+      }
+    }
+
+    /// <summary>
+    /// Height of the page in the document's PageUnitSystem
+    /// </summary>
+    public double PageHeight
+    {
+      get
+      {
+        IntPtr const_ptr_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoPageView_GetSize(const_ptr_this, false);
+      }
+      set
+      {
+        IntPtr ptr_this = NonConstPointer();
+        UnsafeNativeMethods.CRhinoPageView_SetSize(ptr_this, false, value);
       }
     }
 

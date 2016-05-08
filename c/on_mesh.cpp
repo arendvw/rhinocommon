@@ -64,6 +64,61 @@ RH_C_FUNCTION bool ON_Mesh_SetTextureCoordinate(ON_Mesh* pMesh, int index, float
   return rc;
 }
 
+
+RH_C_FUNCTION bool ON_Mesh_HasCachedTextureCoordinates(ON_Mesh* pMesh)
+{
+  bool rc = false;
+  if( pMesh )
+  {
+    rc = pMesh->HasCachedTextureCoordinates();
+  }
+  return rc;
+}
+
+RH_C_FUNCTION void ON_Mesh_SetCachedTextureCoordinates(ON_Mesh* pMesh, ON_TextureMapping* pMapping, ON_Xform* pXform, bool bLazy)
+{
+  pMesh->SetCachedTextureCoordinates(*pMapping, pXform, bLazy);
+}
+
+RH_C_FUNCTION const ON_TextureCoordinates* ON_Mesh_CachedTextureCoordinates(ON_Mesh* pMesh, ON_UUID id) 
+
+{
+  const ON_TextureCoordinates* value = pMesh ? pMesh->CachedTextureCoordinates(id) : NULL;
+  return value;
+}
+
+RH_C_FUNCTION int ON_TextureCoordinates_GetDimension(const ON_TextureCoordinates* pointer)
+
+{
+  if (pointer) return pointer->m_dim;
+  return 0;
+}
+
+
+RH_C_FUNCTION int ON_TextureCoordinates_GetPointListCount(const ON_TextureCoordinates* pointer)
+{
+  if (pointer) return pointer->m_T.Count();
+  return 0;
+}
+
+RH_C_FUNCTION int ON_TextureCoordinates_GetTextureCoordinate(const ON_TextureCoordinates* pointer, int vertex_index, double* u, double* v, double* w)
+{
+  if (pointer == NULL) return 0;
+  if (vertex_index < 0 || vertex_index >= pointer->m_T.Count()) return 0;
+  *u = pointer->m_T[vertex_index].x;
+  *v = pointer->m_T[vertex_index].y;
+  *w = pointer->m_T[vertex_index].z;
+  return pointer->m_dim;
+}
+
+RH_C_FUNCTION ON_UUID ON_TextureCoordinates_GetMappingId(const ON_TextureCoordinates* pointer)
+
+{
+ if (pointer == NULL) return ON_nil_uuid;
+ return pointer->m_tag.m_mapping_id;
+}
+
+
 RH_C_FUNCTION int ON_Mesh_AddFace(ON_Mesh* pMesh, int vertex1, int vertex2, int vertex3, int vertex4)
 {
   int rc = -1;
@@ -412,9 +467,7 @@ RH_C_FUNCTION int ON_Mesh_GetInt( const ON_Mesh* pConstMesh, int which )
       }
     case idxSolidOrientation:
       {
-#if defined(RHINO_V5SR) || defined(OPENNURBS_BUILD)// only available in V5
         rc = pConstMesh->SolidOrientation();
-#endif
       }
       break;
     case idxMeshTopologyEdgeCount:
@@ -776,20 +829,12 @@ RH_C_FUNCTION bool ON_Mesh_IsPointInside(const ON_Mesh* pConstMesh, ON_3DPOINT_S
   {
     ON_3dPoint _point(point.val);
 
-#if defined(RHINO_V5SR) // only available in V5
     if( pConstMesh->IsSolid() )
-#else
-    if( pConstMesh->IsClosed() )
-#endif
     {
       ON_BoundingBox bbox = pConstMesh->BoundingBox();
       ON_Line line(_point, bbox.m_max + ON_3dPoint(100,100,100));
 
-#if defined(RHINO_V5SR) // only available in V5
       const ON_MeshTree* mesh_tree = pConstMesh->MeshTree(true);
-#else
-      const ON_MeshTree* mesh_tree = pConstMesh->MeshTree();
-#endif
       if( mesh_tree )
       {
         ON_SimpleArray<ON_CMX_EVENT> events;
@@ -799,9 +844,6 @@ RH_C_FUNCTION bool ON_Mesh_IsPointInside(const ON_Mesh* pConstMesh, ON_3DPOINT_S
         }
       }
     }
-//#if defined(RHINO_V5SR) // only available in V5
-//    rc = pConstMesh->IsPointInside(_point, tolerance, strictlyin);
-//#endif
   }
 #endif
   return rc;
@@ -898,7 +940,10 @@ RH_C_FUNCTION void ON_Mesh_ClearList( ON_Mesh* pMesh, int which )
     else if( idxClearColors == which )
       pMesh->m_C.SetCount(0);
     else if( idxClearTextureCoordinates == which )
+	{
       pMesh->m_T.SetCount(0);
+	  pMesh->m_S.SetCount(0);
+	}
     else if( idxClearHiddenVertices == which )
       pMesh->m_H.SetCount(0);
   }
@@ -2102,17 +2147,10 @@ RH_C_FUNCTION ON_MassProperties* ON_Mesh_MassProperties(bool bArea, const ON_Mes
     bool success = false;
 
     //David (19/01/2012): Weird bug in Rhino4, using true for the last two arguments results in a faulty volume.
-#if defined(RHINO_V5SR) // only available in V5
     if( bArea )
       success = pMesh->AreaMassProperties( *rc, true, true, true, true );
     else
       success = pMesh->VolumeMassProperties( *rc, true, true, true, true, ON_UNSET_POINT );
-#else
-    if( bArea )
-      success = pMesh->AreaMassProperties( *rc, true, true, false, false );
-    else
-      success = pMesh->VolumeMassProperties( *rc, true, true, false, false, ON_UNSET_POINT );
-#endif
 
     if( !success )
     {
@@ -2127,6 +2165,139 @@ RH_C_FUNCTION ON_MassProperties* ON_Mesh_MassProperties(bool bArea, const ON_Mes
 RH_C_FUNCTION ON_TextureMapping* ON_TextureMapping_New()
 {
   return new ON_TextureMapping();
+}
+
+RH_C_FUNCTION ON_UUID ON_TextureMapping_GetId(const ON_TextureMapping* pTextureMapping) 
+{
+  if (pTextureMapping == NULL)
+    return ON_nil_uuid;
+  return pTextureMapping->m_mapping_id;
+}
+
+enum TextureMappingType : int
+{
+  tmtNoMapping       = 0,
+  tmtSrfpMapping     = 1, // u,v = linear transform of surface params,w = 0
+  tmtPlaneMapping    = 2, // u,v,w = 3d coordinates wrt frame
+  tmtCylinderMapping = 3, // u,v,w = longitude, height, radius
+  tmtSphereMapping   = 4, // (u,v,w) = longitude,latitude,radius
+  tmtBoxMapping      = 5,
+  tmtMeshMappingPrimitive = 6, // m_mapping_primitive is an ON_Mesh 
+  tmtSrfMappingPrimitive  = 7, // m_mapping_primitive is an ON_Surface
+  tmtBrepMappingPrimitive = 8, // m_mapping_primitive is an ON_Brep
+};
+
+RH_C_FUNCTION TextureMappingType ON_TextureMapping_GetMappingType(const ON_TextureMapping* pTextureMapping)
+{
+  if (pTextureMapping == NULL) return tmtNoMapping;
+  switch (pTextureMapping->m_type)
+  {
+    case ON_TextureMapping::no_mapping:
+      return tmtNoMapping;
+    case ON_TextureMapping::srfp_mapping:
+      return tmtSrfpMapping;
+    case ON_TextureMapping::plane_mapping:
+      return tmtPlaneMapping;
+    case ON_TextureMapping::cylinder_mapping:
+      return tmtCylinderMapping;
+    case ON_TextureMapping::sphere_mapping:
+      return tmtSphereMapping;
+    case ON_TextureMapping::box_mapping:
+      return tmtBoxMapping;
+    case ON_TextureMapping::mesh_mapping_primitive:
+      return tmtMeshMappingPrimitive;
+    case ON_TextureMapping::srf_mapping_primitive:
+      return tmtSrfMappingPrimitive;
+    case ON_TextureMapping::brep_mapping_primitive:
+      return tmtBrepMappingPrimitive;
+  }
+  // Unknown type, add support for it to the list above
+  return tmtNoMapping; 
+}
+
+enum TextureMappingGetTransform : int
+{
+  gettUVW,
+  gettPxyz,
+  gettNxyz
+};
+
+RH_C_FUNCTION bool ON_TextureMapping_GetTransform(const ON_TextureMapping* pTextureMapping, TextureMappingGetTransform type, ON_Xform* xformOut)
+{
+  if (pTextureMapping == NULL || xformOut == NULL) return false;
+  switch (type)
+  {
+    case gettUVW:
+      *xformOut = pTextureMapping->m_uvw;
+      return true;
+    case gettPxyz:
+      *xformOut = pTextureMapping->m_Pxyz;
+      return true;
+    case gettNxyz:
+      *xformOut = pTextureMapping->m_Nxyz;
+      return true;
+  }
+  return false;
+}
+
+RH_C_FUNCTION bool ON_TextureMapping_SetTransform(ON_TextureMapping* pTextureMapping, TextureMappingGetTransform type, ON_Xform* xform)
+{
+  if (pTextureMapping == NULL || xform == NULL) return false;
+  switch (type)
+  {
+    case gettUVW:
+      pTextureMapping->m_uvw = *xform;
+      return true;
+    case gettPxyz:
+      pTextureMapping->m_Pxyz = *xform;
+      return true;
+    case gettNxyz:
+      pTextureMapping->m_Nxyz = *xform;
+      return true;
+  }
+  return false;
+}
+
+RH_C_FUNCTION bool ON_TextureMapping_GetMappingBox(const ON_TextureMapping* pTextureMapping, ON_PLANE_STRUCT* planeOut, ON_Interval* dxOut, ON_Interval* dyOut, ON_Interval* dzOut)
+{
+  if (pTextureMapping == NULL) return false;
+  ON_Plane plane;
+  ON_Interval dx, dy, dz;
+  if (!pTextureMapping->GetMappingBox(plane, dx, dy, dz))
+    return false;
+  if (planeOut) CopyToPlaneStruct(*planeOut, plane);
+  if (dxOut) *dxOut = dx;
+  if (dyOut) *dyOut = dy;
+  if (dzOut) *dzOut = dz;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_TextureMapping_GetMappingSphere(const ON_TextureMapping* pTextureMapping, ON_Sphere* sphere)
+{
+  if (pTextureMapping == NULL || sphere == NULL) return false;
+  bool success = pTextureMapping->GetMappingSphere(*sphere);
+  return success;
+}
+
+RH_C_FUNCTION bool ON_TextureMapping_GetMappingCylinder(const ON_TextureMapping* pTextureMapping, ON_Cylinder* cylinder)
+{
+  if (pTextureMapping == NULL || cylinder == NULL) return false;
+  bool success = pTextureMapping->GetMappingCylinder(*cylinder);
+  return success;
+}
+
+RH_C_FUNCTION bool ON_TextureMapping_GetMappingPlane(const ON_TextureMapping* pTextureMapping, ON_PLANE_STRUCT* planeOut, ON_Interval* dxOut, ON_Interval* dyOut, ON_Interval* dzOut)
+{
+  if (pTextureMapping == NULL) return false;
+  ON_Plane plane;
+  ON_Interval dx, dy, dz;
+  if (!pTextureMapping->GetMappingPlane(plane, dx, dy, dz))
+    return false;
+  if (planeOut) CopyToPlaneStruct(*planeOut, plane);
+  if (dxOut) *dxOut = dx;
+  if (dyOut) *dyOut = dy;
+  if (dzOut) *dzOut = dz;
+  return true;
 }
 
 RH_C_FUNCTION bool ON_TextureMapping_SetPlaneMapping(ON_TextureMapping* pTextureMapping, const ON_PLANE_STRUCT* plane, ON_INTERVAL_STRUCT dx, ON_INTERVAL_STRUCT dy, ON_INTERVAL_STRUCT dz)
@@ -2178,6 +2349,213 @@ RH_C_FUNCTION bool ON_TextureMapping_SetBoxMapping(ON_TextureMapping* pTextureMa
   }
   return rc;
 }
+
+#if !defined OPENNURBS_BUILD
+static const ON_MappingRef* GetValidMappingRef(const CRhinoObject* pObject, bool withChannels)
+{
+	// Helper function - implementation only.
+	if (NULL == pObject)
+		return NULL;
+
+	const ON_ObjectRenderingAttributes& attr = pObject->Attributes().m_rendering_attributes;
+
+	// There are no mappings at all - just get out.
+	if (0 == attr.m_mappings.Count())
+		return NULL;
+
+	// Try with the current renderer first.
+	const ON_MappingRef* pRef = attr.MappingRef(RhinoApp().GetDefaultRenderApp());
+
+	// 5DC0192D-73DC-44F5-9141-8E72542E792D
+	ON_UUID uuidRhinoRender = RhinoApp().RhinoRenderPlugInUUID();
+	if (NULL == pRef)
+	{
+		//Prefer the Rhino renderer mappings next
+		pRef = attr.MappingRef(uuidRhinoRender);
+	}
+
+	// Then just run through the list until we find one with some channels.
+	int i = 0;
+	while (NULL == pRef && withChannels && i < attr.m_mappings.Count())
+	{
+		pRef = attr.m_mappings.At(i++);
+	}
+
+	return pRef;
+}
+
+//
+// return true if object has a mapping provided from any render plugin
+//
+
+RH_C_FUNCTION  bool ON_TextureMapping_ObjectHasMapping(const CRhinoObject* pRhinoObject)
+{
+
+  if (NULL == pRhinoObject)
+    return false;
+
+  for (int i = 0; i < pRhinoObject->Attributes().m_rendering_attributes.m_mappings.Count(); i++)
+  {
+    const ON_MappingRef *pRef = pRhinoObject->Attributes().m_rendering_attributes.m_mappings.At(i);
+    if (pRef->m_mapping_channels.Count())
+      return true;
+  }
+
+  return false;
+}
+
+RH_C_FUNCTION ON_TextureMapping* ON_TextureMapping_GetMappingFromObject(const CRhinoObject* pRhinoObject, int iChannelId, ON_Xform* objectXformOut)
+{
+  if (NULL == pRhinoObject)
+    return NULL;
+  CRhinoDoc* pRhinoDoc = pRhinoObject->Document();
+  if(NULL == pRhinoDoc)
+		return NULL;
+  const ON_MappingRef* pRef = GetValidMappingRef(pRhinoObject, true);
+	if(NULL == pRef)
+    return NULL;
+  CRhinoTextureMappingTable& table = pRhinoDoc->m_texture_mapping_table;
+	for (int i = 0; i < pRef->m_mapping_channels.Count(); i++)
+	{
+		const ON_MappingChannel& chan = pRef->m_mapping_channels[i];
+		if (chan.m_mapping_channel_id != iChannelId)
+      continue;
+    ON_UUID id = chan.m_mapping_id;
+    ON_TextureMapping mapping;
+    if (!table.GetTextureMapping(id, mapping))
+      return false;
+    if (objectXformOut)
+      *objectXformOut = chan.m_object_xform;
+    return new ON_TextureMapping(mapping);
+	}
+	return NULL;
+}
+
+RH_C_FUNCTION int ON_TextureMapping_GetObjectTextureChannels(const CRhinoObject* rhinoObject, int channelCount, /*ARRAY*/int* channels)
+{
+  if (NULL == rhinoObject)
+    return 0;
+  const UUID plug_in_id = RhinoApp().GetDefaultRenderApp();
+	const ON_MappingRef* mapping_ref = rhinoObject->Attributes().m_rendering_attributes.MappingRef(plug_in_id);
+  if (NULL == mapping_ref)
+    return 0;
+  const int count = mapping_ref->m_mapping_channels.Count();
+  if (channelCount < 1)
+    return count;
+  if (channelCount < count)
+    return 0;
+	for (int i = 0; i < count && i < channelCount; i++)
+    channels[i] = mapping_ref->m_mapping_channels[i].m_mapping_channel_id;
+  return channelCount;
+}
+
+RH_C_FUNCTION int ON_TextureMapping_SetObjectMapping(const CRhinoObject* rhinoObject, int iChannelId, ON_TextureMapping* mapping)
+{
+  if (NULL == rhinoObject)
+    return 0;
+	CRhinoDoc* rhino_doc = rhinoObject->Document();
+	if (NULL == rhino_doc)
+		return 0;
+
+  const UUID plug_in_id = RhinoApp().GetDefaultRenderApp();
+	const ON_MappingRef* mapping_ref = rhinoObject->Attributes().m_rendering_attributes.MappingRef(plug_in_id);
+	ON_Xform xform(1);
+	int index = -1;
+	
+	//If there's no mapping ref, we can assume that there's no custom mapping
+	if (mapping_ref)
+	{
+		//There are count mapping channels on this object.  Iterate through them looking for the channel
+		const int count = mapping_ref->m_mapping_channels.Count();
+		for (int i = 0; i < count; i++)
+		{
+			const ON_MappingChannel& mc = mapping_ref->m_mapping_channels[i];
+			if (iChannelId == mc.m_mapping_channel_id)
+			{
+				//OK - this is the guy.
+				index = mc.m_mapping_index;
+
+				//The mapping for an object is modified per object by its local transform.
+				xform = mc.m_object_xform;
+			}
+		}
+	}
+
+	///////////////////////////////////////////////////////////////////////////////////////
+	//Set the texture mapping on an object
+	///////////////////////////////////////////////////////////////////////////////////////
+
+  bool success = false;
+	CRhinoTextureMappingTable& table = rhino_doc->m_texture_mapping_table;
+
+  if (NULL == mapping)
+  {
+    // Removing the mapping
+
+    // No mapping ref so just return success
+    if (NULL == mapping_ref)
+      return 1; 
+
+    // No previous mapping so return success
+    if (index < 0)
+      return 1;
+  
+    // If there was a previous mapping then remove it now
+    success = table.DeleteTextureMapping(index);
+    return (success ? 1 : 0);
+  }
+
+  // Add or replace the mapping
+
+	if (-1 != index)
+	{
+		//This does everything.
+		success = table.ModifyTextureMapping(*mapping, index);
+	}
+	else
+	{
+		//There's no entry in the table.  We have to add one.
+		index = table.AddTextureMapping(*mapping);
+
+		//In this case, we're going to have to build new attributes for the object
+		//because there's no existing custom texture mapping.
+
+		ON_3dmObjectAttributes new_attr = rhinoObject->Attributes();
+		ON_MappingRef* new_mapping_ref = const_cast<ON_MappingRef*>(new_attr.m_rendering_attributes.MappingRef(plug_in_id));
+
+    if (NULL == new_mapping_ref)
+			new_mapping_ref = new_attr.m_rendering_attributes.AddMappingRef(plug_in_id);
+
+		ASSERT(new_mapping_ref);
+    if (NULL == new_mapping_ref)
+      return 0;
+
+		bool found = false;
+		for ( int i = 0; i < new_mapping_ref->m_mapping_channels.Count(); i++)
+		{
+			ON_MappingChannel& mc = const_cast<ON_MappingChannel&>(new_mapping_ref->m_mapping_channels[i]);
+			if (mc.m_mapping_channel_id != iChannelId)
+        continue;
+			//We found one - we can just modify it.
+			mc.m_mapping_index = index;
+			mc.m_object_xform = xform;
+			found = true;
+      break;
+		}
+
+		if (!found)
+		{
+			//Couldn't modify - have to add.
+			new_mapping_ref->AddMappingChannel(iChannelId, table[index].m_mapping_id);
+		}
+
+		//Now just modify the attributes
+		success = rhino_doc->ModifyObjectAttributes(CRhinoObjRef(rhinoObject), new_attr);
+	}
+
+  return (success ? 1 : 0);
+}
+#endif
 
 static bool GetBrepFaceCorners(const ON_BrepFace& face, ON_SimpleArray<ON_3fPoint>& points)
 {
@@ -2258,4 +2636,48 @@ RH_C_FUNCTION ON_Mesh* ON_Mesh_BrepToMeshSimple(const ON_Brep* pBrep)
  
   return newMesh;
 #endif
+}
+
+RH_C_FUNCTION bool ON_Mesh_CreatePartition(ON_Mesh* pMesh, int max_vertices, int max_triangle)
+{
+  bool rc = false;
+  if( pMesh )
+  {
+    const ON_MeshPartition* pPartition = pMesh->CreatePartition(max_vertices, max_triangle);
+    rc = pPartition != NULL;
+  }
+  return rc;
+}
+
+RH_C_FUNCTION int ON_Mesh_PartitionCount(const ON_Mesh* pConstMesh)
+{
+  int rc = 0;
+  if( pConstMesh )
+  {
+    const ON_MeshPartition* pPartition = pConstMesh->Partition();
+    if( pPartition )
+      rc = pPartition->m_part.Count();
+  }
+  return rc;
+}
+
+RH_C_FUNCTION bool ON_Mesh_GetMeshPart(const ON_Mesh* pConstMesh, int which, int* vi0, int* vi1, int* fi0, int* fi1, int* vertex_count, int* triangle_count )
+{
+  bool rc = false;
+  if( pConstMesh && vi0 && vi1 && fi0 && fi1 && vertex_count && triangle_count )
+  {
+    const ON_MeshPartition* pPartition = pConstMesh->Partition();
+    if( pPartition && which>=0 && which<pPartition->m_part.Count() )
+    {
+      const ON_MeshPart& part = pPartition->m_part[which];
+      *vi0 = part.vi[0];
+      *vi1 = part.vi[1];
+      *fi0 = part.fi[0];
+      *fi1 = part.fi[1];
+      *vertex_count = part.vertex_count;
+      *triangle_count = part.triangle_count;
+      rc = true;
+    }
+  }
+  return rc;
 }

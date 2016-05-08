@@ -2,9 +2,30 @@
 using System;
 using System.Runtime.Serialization;
 using System.Collections.Generic;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.DocObjects
 {
+  public enum DimensionStyleArrowType : int
+  {
+    /// <summary>2:1</summary>
+    SolidTriangle = 0,
+    /// <summary></summary>
+    Dot = 1,
+    /// <summary></summary>
+    Tick = 2,
+    /// <summary>1:1</summary>
+    ShortTriangle = 3,
+    /// <summary></summary>
+    Arrow = 4,
+    /// <summary></summary>
+    Rectangle = 5,
+    /// <summary>4:1</summary>
+    LongTriangle = 6,
+    /// <summary>6:1</summary>
+    LongerTriangle = 7
+  }
+
   [Serializable]
   public class DimensionStyle : Rhino.Runtime.CommonObject
   {
@@ -107,7 +128,7 @@ namespace Rhino.DocObjects
     {
       get
       {
-        using(Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pStringHolder = sh.NonConstPointer();
           IntPtr pConstThis = ConstPointer();
@@ -214,6 +235,8 @@ namespace Rhino.DocObjects
     const int idxLengthResolution = 2;
     const int idxLengthFormat = 3;
     const int idxTextAlignment = 4;
+    const int idxArrowType = 5;
+    const int idxLeaderArrowType = 6;
 
     int GetInt(int which)
     {
@@ -264,13 +287,34 @@ namespace Rhino.DocObjects
       }
       set { SetInt(idxLengthFormat, (int)value); }
     }
+
+    public DimensionStyleArrowType ArrowType
+    {
+      get
+      {
+        int rc = GetInt(idxArrowType);
+        return (DimensionStyleArrowType)Enum.ToObject(typeof(DimensionStyleArrowType), rc);
+      }
+      set { SetInt(idxArrowType, (int)value); }
+    }
+
+    public DimensionStyleArrowType LeaderArrowType
+    {
+      get
+      {
+        int rc = GetInt(idxLeaderArrowType);
+        return (DimensionStyleArrowType)Enum.ToObject(typeof(DimensionStyleArrowType), rc);
+      }
+      set { SetInt(idxLeaderArrowType, (int)value); }
+    }
+
     #endregion
 
     public string Prefix
     {
       get
       {
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pConstThis = ConstPointer();
           IntPtr pString = sh.NonConstPointer();
@@ -289,7 +333,7 @@ namespace Rhino.DocObjects
     {
       get
       {
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pConstThis = ConstPointer();
           IntPtr pString = sh.NonConstPointer();
@@ -385,6 +429,11 @@ namespace Rhino.DocObjects.Tables
       return UnsafeNativeMethods.CRhinoDimStyleTable_Add(m_doc.m_docId, name, reference);
     }
 
+    /// <example>
+    /// <code source='examples\vbnet\ex_dimstyle.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_dimstyle.cs' lang='cs'/>
+    /// <code source='examples\py\ex_dimstyle.py' lang='py'/>
+    /// </example>
     public int CurrentDimensionStyleIndex
     {
       get
@@ -416,7 +465,7 @@ namespace Rhino.DocObjects.Tables
 
     public string GetUnusedDimensionStyleName()
     {
-      using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pStringHolder = sh.NonConstPointer();
         UnsafeNativeMethods.CRhinoDimStyleTable_GetUnusedDimensionStyleName(m_doc.m_docId, pStringHolder);

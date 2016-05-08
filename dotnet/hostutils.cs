@@ -1,8 +1,10 @@
 using System;
 using System.Runtime.InteropServices;
+using Rhino.Runtime.InteropWrappers;
 
 #if RHINO_SDK
 using Rhino.PlugIns;
+
 #endif
 
 namespace Rhino.Runtime
@@ -431,7 +433,7 @@ namespace Rhino.Runtime
           m_running_in_rhino_state = 1;
           try
           {
-            if (Rhino.RhinoApp.SdkVersion > 0)
+            if (0 != Rhino.RhinoApp.SdkVersion )
               m_running_in_rhino_state = 2;
           }
           catch (Exception)
@@ -446,6 +448,7 @@ namespace Rhino.Runtime
       }
     }
 
+#if RHINO_SDK
     // 0== unknown
     // 1== loaded
     //-1== not loaded
@@ -483,9 +486,9 @@ namespace Rhino.Runtime
 
       if (throwOnFalse)
         throw new RdkNotLoadedException();
-
       return false;
     }
+#endif
 
     static bool m_bSendDebugToRhino; // = false; initialized by runtime
     /// <summary>
@@ -496,7 +499,13 @@ namespace Rhino.Runtime
     public static void DebugString(string msg)
     {
       if (m_bSendDebugToRhino)
+      {
+#if RHINO_SDK
         UnsafeNativeMethods.RHC_DebugPrint(msg);
+#else
+        Console.Write(msg);
+#endif
+      }
     }
     /// <summary>
     /// Prints a debug message to the Rhino Command Line. 
@@ -565,6 +574,7 @@ namespace Rhino.Runtime
     /// </summary>
     public static event ExceptionReportDelegate OnExceptionReport;
 
+#if !OPENNURBS_SDK
     // April 4, 2012 Tim
     // If you don't explicitly set this to null, even though it gets initialized to null, you get compiler
     // warnings in the build process.  This makes Dale jumpy.  So, don't remove the "= null", even though it 
@@ -597,6 +607,7 @@ namespace Rhino.Runtime
 
       return method.DynamicInvoke(args);
     }
+#endif
 
     /// <summary>
     /// Gets the debug dumps. This is a text description of the geometric contents.
@@ -608,7 +619,7 @@ namespace Rhino.Runtime
     public static string DebugDumpToString(Rhino.Geometry.GeometryBase geometry)
     {
       IntPtr pConstThis = geometry.ConstPointer();
-      using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.ON_Object_Dump(pConstThis, pString);
@@ -626,7 +637,7 @@ namespace Rhino.Runtime
     public static string DebugDumpToString(Rhino.Geometry.BezierCurve bezierCurve)
     {
       IntPtr pConstThis = bezierCurve.ConstPointer();
-      using (Rhino.Runtime.StringHolder sh = new StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.ON_BezierCurve_Dump(pConstThis, pString);
@@ -639,7 +650,7 @@ namespace Rhino.Runtime
     /// Parses a plugin and create all the commands defined therein.
     /// </summary>
     /// <param name="plugin">Plugin to harvest for commands.</param>
-    public static void CreateCommands(PlugIn plugin)
+    public static void CreateCommands(PlugIn plugin) 
     {
       if (plugin!=null)
         plugin.InternalCreateCommands();
@@ -709,17 +720,17 @@ namespace Rhino.Runtime
       return rc;
     }
 #endif
-    static int GetNowHelper(int locale_id, IntPtr format, IntPtr pResultString)
+    static int GetNowHelper(int localeId, IntPtr pStringHolderFormat, IntPtr pResultString)
     {
       int rc;
       try
       {
-        string dateformat = Marshal.PtrToStringUni(format);
+        string dateformat = StringHolder.GetString(pStringHolderFormat);
         if (string.IsNullOrEmpty(dateformat))
           return 0;
         // surround apostrophe with quotes in order to keep the formatter happy
         dateformat = dateformat.Replace("'", "\"'\"");
-        System.Globalization.CultureInfo ci = new System.Globalization.CultureInfo(locale_id);
+        System.Globalization.CultureInfo ci = new System.Globalization.CultureInfo(localeId);
         DateTime now = System.DateTime.Now;
         string s = string.IsNullOrEmpty(dateformat) ? now.ToString(ci) : now.ToString(dateformat, ci);
         UnsafeNativeMethods.ON_wString_Set(pResultString, s);
@@ -733,13 +744,13 @@ namespace Rhino.Runtime
       return rc;
     }
 
-    static int GetFormattedTimeHelper(int locale_id, int sec, int min, int hour, int day, int month, int year, IntPtr format, IntPtr pResultString)
+    static int GetFormattedTimeHelper(int localeId, int sec, int min, int hour, int day, int month, int year, IntPtr pStringHolderFormat, IntPtr pResultString)
     {
       int rc;
       try
       {
-        string dateformat = Marshal.PtrToStringUni(format);
-        System.Globalization.CultureInfo ci = new System.Globalization.CultureInfo(locale_id);
+        string dateformat = StringHolder.GetString(pStringHolderFormat);
+        System.Globalization.CultureInfo ci = new System.Globalization.CultureInfo(localeId);
         DateTime dt = new DateTime(year, month, day, hour, min, sec);
         dt = dt.ToLocalTime();
         string s = string.IsNullOrEmpty(dateformat) ? dt.ToString(ci) : dt.ToString(dateformat, ci);
@@ -754,16 +765,21 @@ namespace Rhino.Runtime
       return rc;
     }
 
-    static int EvaluateExpressionHelper(IntPtr statements, IntPtr expression, int rhinoDocId, IntPtr pResultString)
+    static int EvaluateExpressionHelper(IntPtr statementsAsStringHolder, IntPtr expressionAsStringHolder, int rhinoDocId, IntPtr pResultString)
     {
       int rc = 0;
 #if RHINO_SDK
       try
       {
-        string expr = Marshal.PtrToStringUni(expression);
-        string state = Marshal.PtrToStringUni(statements);
+        // 11 July 2014 S. Baer (RH-28010)
+        // Force the culture to invarient while running the evaluation
+        var current = System.Threading.Thread.CurrentThread.CurrentCulture;
+        System.Threading.Thread.CurrentThread.CurrentCulture = System.Globalization.CultureInfo.InvariantCulture;
+        string state = StringHolder.GetString(statementsAsStringHolder);
+        string expr = StringHolder.GetString(expressionAsStringHolder);
         PythonScript py = PythonScript.Create();
         object eval_result = py.EvaluateExpression(state, expr);
+        System.Threading.Thread.CurrentThread.CurrentCulture = current;
         if (null != eval_result)
         {
           string s = null;
@@ -824,12 +840,13 @@ namespace Rhino.Runtime
 #endif
       return rc;
     }
-    internal delegate int EvaluateExpressionCallback(IntPtr statements, IntPtr expression, int rhinoDocId, IntPtr resultString);
+    internal delegate int EvaluateExpressionCallback(IntPtr statementsAsStringHolder, IntPtr expressionAsStringHolder, int rhinoDocId, IntPtr resultString);
     static readonly EvaluateExpressionCallback m_evaluate_callback = EvaluateExpressionHelper;
-    internal delegate int GetNowCallback(int locale_id, IntPtr format, IntPtr resultString);
+    internal delegate int GetNowCallback(int localeId, IntPtr formatAsStringHolder, IntPtr resultString);
     static readonly GetNowCallback m_getnow_callback = GetNowHelper;
-    internal delegate int GetFormattedTimeCallback(int locale, int sec, int min, int hour, int day, int month, int year, IntPtr format, IntPtr resultString);
+    internal delegate int GetFormattedTimeCallback(int locale, int sec, int min, int hour, int day, int month, int year, IntPtr formatAsStringHolder, IntPtr resultString);
     static readonly GetFormattedTimeCallback m_getformattedtime_callback = GetFormattedTimeHelper;
+
     static HostUtils()
     {
       // These need to be moved somewhere else because they throw security exceptions
@@ -864,8 +881,25 @@ namespace Rhino.Runtime
         Rhino.DocObjects.Custom.UserData.RegisterType(t);
       }
 
+#if RHINO_SDK
       UnsafeNativeMethods.RHC_SetGetNowProc(m_getnow_callback, m_getformattedtime_callback);
       UnsafeNativeMethods.RHC_SetPythonEvaluateCallback(m_evaluate_callback);
+
+      UnsafeNativeMethods.RHC_SetCmnUtilitiesCallbacks(PlugIn.GetPlugInSettingsFolderHook, PlugIn.GetPlugInRuiFileNameHook, PlugIn.ValidateRegisteredPlugInRuiFileNameHook);
+#endif
+      InitializeZooClient();
+    }
+
+    /// <summary>
+    /// Initializes the ZooClient and Rhino license manager, this should get
+    /// called automatically when RhinoCommon is loaded so you probably won't
+    /// have to call this method.
+    /// </summary>
+    public static void InitializeZooClient()
+    {
+#if RHINO_SDK
+      LicenseManager.SetCallbacks();
+#endif
     }
 
 #if RHINO_SDK
@@ -904,7 +938,6 @@ namespace Rhino.Runtime
       PlugIn.m_plugins.Add(plugin);
       return plugin;
     }
-#endif
 
     static void DelegateReport(System.Delegate d, string name)
     {
@@ -929,7 +962,6 @@ namespace Rhino.Runtime
     internal static ReportCallback m_ew_report = EventWatcherReport;
     internal static void EventWatcherReport(int c)
     {
-#if RHINO_SDK
       UnsafeNativeMethods.CRhinoEventWatcher_LogState("RhinoCommon delegate based event watcher\n");
       DelegateReport(RhinoApp.m_init_app, "InitApp");
       DelegateReport(RhinoApp.m_close_app, "CloseApp");
@@ -949,8 +981,8 @@ namespace Rhino.Runtime
       DelegateReport(RhinoDoc.m_replace_object, "ReplaceObject");
       DelegateReport(RhinoDoc.m_undelete_object, "UndeleteObject");
       DelegateReport(RhinoDoc.m_purge_object, "PurgeObject");
-#endif
     }
+#endif
 
 #if RDK_CHECKED
     internal delegate void RdkReportCallback(int c);
@@ -1038,6 +1070,7 @@ namespace Rhino.Runtime
       }
     }
 
+#if RHINO_SDK
     internal static void WriteIntoSerializationInfo(IntPtr pRhCmnProfileContext, System.Runtime.Serialization.SerializationInfo info, string prefixStrip)
     {
       const int _string = 1;
@@ -1106,7 +1139,7 @@ namespace Rhino.Runtime
               {
                 int abgr = 0;
                 UnsafeNativeMethods.CRhinoProfileContext_LoadColor(pRhCmnProfileContext, section, entry, ref abgr);
-                System.Drawing.Color c = System.Drawing.ColorTranslator.FromWin32(abgr);
+                System.Drawing.Color c = Interop.ColorFromWin32(abgr);
                 //string s = System.Drawing.ColorTranslator.ToHtml(c);
                 info.AddValue(name, c);
               }
@@ -1281,6 +1314,7 @@ namespace Rhino.Runtime
       }
       return pProfileContext;
     }
+#endif
   }
 
   /// <summary>

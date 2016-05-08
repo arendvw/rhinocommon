@@ -11,7 +11,7 @@ namespace Rhino.Geometry
   /// </summary>
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 32)]
   [Serializable]
-  public struct Quaternion : IEquatable<Quaternion>
+  public struct Quaternion : IEquatable<Quaternion>, IEpsilonComparable<Quaternion>
   {
     #region statics
     /// <summary>
@@ -117,6 +117,19 @@ namespace Rhino.Geometry
       return (obj is Quaternion && this == (Quaternion)obj);
     }
 
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Quaternion other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_a, other.m_a, epsilon) &&
+             RhinoMath.EpsilonEquals(m_b, other.m_b, epsilon) &&
+             RhinoMath.EpsilonEquals(m_c, other.m_c, epsilon) &&
+             RhinoMath.EpsilonEquals(m_d, other.m_d, epsilon);
+    }
     /// <summary>
     /// Gets a non-unique but repeatable hashing code for this quaternion.
     /// </summary>
@@ -329,7 +342,7 @@ namespace Rhino.Geometry
       }
     }
 
-#if USING_V5_SDK
+#if RHINO_SDK
     /// <summary>
     /// Returns the length or norm of the quaternion.
     /// </summary>
@@ -354,7 +367,7 @@ namespace Rhino.Geometry
       }
     }
 
-#if USING_V5_SDK
+#if RHINO_SDK
     /// <summary>
     /// Computes the distance or norm of the difference between this and another quaternion.
     /// </summary>
@@ -403,7 +416,7 @@ namespace Rhino.Geometry
       return rc;
     }
 
-#if USING_V5_SDK
+#if RHINO_SDK
     /// <summary>
     /// Scales the quaternion's coordinates so that a*a + b*b + c*c + d*d = 1.
     /// </summary>
@@ -449,7 +462,7 @@ namespace Rhino.Geometry
       return new Quaternion(Math.Cos(0.5*angle),s*axisOfRotation.m_x,s*axisOfRotation.m_y,s*axisOfRotation.m_z);
     }
 
-#if USING_V5_SDK
+#if RHINO_SDK
     /// <summary>
     /// Sets the quaternion to the unit quaternion which rotates
     /// plane0.xaxis to plane1.xaxis, plane0.yaxis to plane1.yaxis,

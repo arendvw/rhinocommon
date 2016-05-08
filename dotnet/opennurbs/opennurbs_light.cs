@@ -1,5 +1,6 @@
 using System;
 using System.Runtime.Serialization;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.Geometry
 {
@@ -80,8 +81,8 @@ namespace Rhino.Geometry
     }
 #endif
 
-    internal Light(IntPtr native_ptr, object parent)
-      : base(native_ptr, parent, -1)
+    internal Light(IntPtr nativePtr, object parent)
+      : base(nativePtr, parent, -1)
     { }
 
     internal override GeometryBase DuplicateShallowHelper()
@@ -107,6 +108,16 @@ namespace Rhino.Geometry
       : base (info, context)
     {
     }
+
+#if RHINO_SDK
+    internal override IntPtr _InternalGetConstPointer()
+    {
+      Rhino.DocObjects.Tables.LightTableEventArgs lte = m__parent as Rhino.DocObjects.Tables.LightTableEventArgs;
+      if (lte != null)
+        return lte.ConstLightPointer();
+      return base._InternalGetConstPointer();
+    }
+#endif
 
     /// <summary>
     /// Gets or sets a value that defines if the light is turned on (true) or off (false).
@@ -204,6 +215,7 @@ namespace Rhino.Geometry
       get { return LightStyle == LightStyle.WorldRectangular; }
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Gets a value indicating whether this object is a Sun light.
     /// </summary>
@@ -213,9 +225,10 @@ namespace Rhino.Geometry
       {
         Rhino.Runtime.HostUtils.CheckForRdk(true, true);
         IntPtr pConstThis = ConstPointer();
-        return UnsafeNativeMethods.Rdk_Sun_IsSunLight(pConstThis); 
+        return UnsafeNativeMethods.Rdk_Sun_IsSunLight(pConstThis);
       }
     }
+#endif
 
     /// <summary>
     /// Gets a value, determined by LightStyle, that explains whether
@@ -362,6 +375,11 @@ namespace Rhino.Geometry
     /// <summary>
     /// Gets or sets the diffuse color.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_modifylightcolor.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_modifylightcolor.cs' lang='cs'/>
+    /// <code source='examples\py\ex_modifylightcolor.py' lang='py'/>
+    /// </example>
     public System.Drawing.Color Diffuse
     {
       get { return GetColor(idxDiffuse); }
@@ -389,6 +407,26 @@ namespace Rhino.Geometry
       IntPtr pThis = NonConstPointer();
       UnsafeNativeMethods.ON_Light_SetAttenuation(pThis, a0, a1, a2);
     }
+
+    /// <summary>
+    /// Gets or Sets the attenuation vector.
+    /// </summary>
+    public Vector3d AttenuationVector
+    {
+      get
+      {
+        IntPtr ptr_const_this = ConstPointer();
+        Vector3d rc = new Vector3d();
+        UnsafeNativeMethods.ON_Light_GetAttenuationVector(ptr_const_this, ref rc);
+        return rc;
+      }
+
+      set
+      {
+        SetAttenuation(value.X, value.Y, value.Z);
+      }
+    }
+
     /// <summary>
     /// Gets the attenuation settings (ignored for "directional" and "ambient" lights).
     /// <para>attenuation = 1/(a0 + d*a1 + d^2*a2) where d = distance to light.</para>
@@ -493,7 +531,7 @@ namespace Rhino.Geometry
       get
       {
         IntPtr pConstThis = ConstPointer();
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pString = sh.NonConstPointer();
           UnsafeNativeMethods.ON_Light_GetName(pConstThis, pString);

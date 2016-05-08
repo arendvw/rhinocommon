@@ -9,7 +9,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("Robert McNeel & Associates")]
 [assembly: AssemblyProduct("Rhino")]
-[assembly: AssemblyCopyright("Copyright ©  2012")]
+[assembly: AssemblyCopyright("Copyright ©  2013")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]
 // Brian Gillespie: 9/22/2010
@@ -53,11 +53,27 @@ using System.Runtime.InteropServices;
 // 29 Aug 2012 (5.1.30000.4) Adding support for history and history replay
 //                           SR0 - Initial release of Rhino 5
 // 12 Oct 2012 (5.1.30000.5) Update for SR1 of Rhino 5
-[assembly: AssemblyVersion("5.1.30000.5")]
+// 21 Feb 2013 (5.1.30000.6) Update for SR2 of Rhino 5
+// 21 Feb 2013 (5.1.30000.7) Update for SR3 of Rhino 5
+//  2 Apr 2013 (5.1.30000.8) Update for SR4 of Rhino 5
+// 15 May 2013 (5.1.30000.9) Update for SR5 of Rhino 5
+// 19 June 2013 (5.1.30000.10) Update for SR6 of Rhino 5
+// 26 Aug 2013 (5.1.30000.11) Update for SR7 of Rhino 5
+// 4 Nov 2013 (5.1.30000.12) Update for SR8 of Rhino 5
+// 26 Feb 2014 (5.1.30000.13) Update for SR9 of Rhino 5
+// 5 May 2014 (5.1.30000.14) Update for SR10 of Rhino 5
+// 21 Jan 2015 (5.1.30000.15) was used for SR11 of Rhino5
+// 21 Jan 2015 (5.1.30000.16) for trunk/SR12 of Rhino5
+[assembly: AssemblyVersion("5.1.30000.16")]
 
 [assembly: AssemblyFileVersion("5.0.20693.0")]
 
+#if MONO_BUILD && OPENNURBS_SDK
+//Mobile platform build has non-compliant classes
+[assembly: System.CLSCompliant(false)]
+#else
 [assembly: System.CLSCompliant(true)]
+#endif
 
 // 23 April 2007 S. Baer (RR 25439)
 // Plug-Ins that are being loaded from a network drive will throw security exceptions
@@ -65,6 +81,6 @@ using System.Runtime.InteropServices;
 // also requires that this attribute be set in order for things to work.
 [assembly: System.Security.AllowPartiallyTrustedCallers]
 
-#if !RHINO_SDK
+#if !RHINO_SDK && !MONO_BUILD
 [assembly: System.Security.SecurityRules(System.Security.SecurityRuleSet.Level1)]
 #endif

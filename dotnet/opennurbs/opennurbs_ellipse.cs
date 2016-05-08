@@ -8,7 +8,7 @@ namespace Rhino.Geometry
   /// </summary>
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 144)]
   [Serializable]
-  public struct Ellipse
+  public struct Ellipse : IEpsilonComparable<Ellipse>
   {
     #region members
     internal Plane m_plane;
@@ -87,5 +87,18 @@ namespace Rhino.Geometry
       return NurbsCurve.CreateFromEllipse(this);
     }
     #endregion
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Ellipse other, double epsilon)
+    {
+      return m_plane.EpsilonEquals(other.m_plane, epsilon) &&
+             RhinoMath.EpsilonEquals(m_radius1, other.m_radius1, epsilon) &&
+             RhinoMath.EpsilonEquals(m_radius2, other.m_radius2, epsilon);
+    }
   }
 }

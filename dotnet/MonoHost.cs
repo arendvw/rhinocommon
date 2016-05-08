@@ -50,7 +50,7 @@ namespace Rhino.Runtime
         //System.Windows.Forms.Application.EnableVisualStyles();
 
         InitializeExceptionHandling();
-        AssemblyResolver.InitializeAssemblyResolving();
+        HostUtils.InitializeRhinoCommon();
 
         HostUtils.DebugString("Attempt to initialize MonoMac");
         Type t = typeof(System.Windows.Forms.Application);
@@ -63,6 +63,20 @@ namespace Rhino.Runtime
             mi.Invoke(null, null);
           }
         }
+      }
+
+      // 7 Apr 2013, S. Baer
+      // Mac plug-ins can now be located inside of OSX plug-in bundles.
+      // The native plug-in manager may just pass us the bundle path
+      // See if the path refers to a bundle. If that is the case,
+      // look inside the bundle to find the actual assembly
+      var temp_path = System.IO.Path.Combine(path,"Contents");
+      temp_path = System.IO.Path.Combine(temp_path,"Mono");
+      if( System.IO.Directory.Exists(temp_path) )
+      {
+        var files = System.IO.Directory.GetFiles(temp_path, "*.rhp");
+        if( files!=null && files.Length>0 )
+          path = files[0];
       }
 
       HostUtils.DebugString("path = " + path);
@@ -349,9 +363,12 @@ namespace Rhino.Runtime
   }
 }
 
+#if RHINO_SDK
 partial class UnsafeNativeMethods
 {
   // These functions must never be called unless RhinoCommon is being run from Mono
   [DllImport("__Internal", CallingConvention=CallingConvention.Cdecl)]
   internal static extern void RhMono_SetPlugInLoadString(int which, [MarshalAs(UnmanagedType.LPWStr)]string str);
 }
+
+#endif

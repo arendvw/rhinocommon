@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.DocObjects
 {
@@ -99,7 +100,7 @@ namespace Rhino.DocObjects
     {
       get
       {
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pLinetype = ConstPointer();
           IntPtr pString = sh.NonConstPointer();
@@ -259,7 +260,7 @@ namespace Rhino.DocObjects
 
     /// <summary>Sets the length and type of the segment at index.</summary>
     /// <param name="index">Zero based index of the segment.</param>
-    /// <param name="length">The length of the segment to be added.</param>
+    /// <param name="length">The length of the segment to be added in millimeters.</param>
     /// <param name="isSolid">
     /// If true, the length is interpreted as a line. If false,
     /// then the length is interpreted as a space.
@@ -275,7 +276,7 @@ namespace Rhino.DocObjects
     /// Gets the segment information at a index.
     /// </summary>
     /// <param name="index">Zero based index of the segment.</param>
-    /// <param name="length">The length of the segment is assigned to the out parameter during this call.</param>
+    /// <param name="length">The length of the segment in millimeters.</param>
     /// <param name="isSolid">
     /// If the length is interpreted as a line, true is assigned during the call to this out parameter.
     /// <para>If the length is interpreted as a space, then false is assigned during the call to this out parameter.</para>
@@ -598,7 +599,7 @@ namespace Rhino.DocObjects.Tables
     /// <returns>The unused linetype name.</returns>
     public string GetUnusedLinetypeName(bool ignoreDeleted)
     {
-      using (Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.CRhinoLinetypeTable_GetUnusedLinetypeName(m_doc.m_docId, ignoreDeleted, pString);

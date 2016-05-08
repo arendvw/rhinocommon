@@ -11,7 +11,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 8)]
   [DebuggerDisplay("({m_x}, {m_y})")]
   [Serializable]
-  public struct Point2f : IEquatable<Point2f>, IComparable<Point2f>, IComparable
+  public struct Point2f : IEquatable<Point2f>, IComparable<Point2f>, IComparable, IEpsilonFComparable<Point2f>
   {
     #region members
     internal float m_x;
@@ -96,6 +96,18 @@ namespace Rhino.Geometry
     public bool Equals(Point2f point)
     {
       return this == point;
+    }
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Point2f other, float epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon);
     }
 
     /// <summary>
@@ -237,7 +249,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 12)]
   [DebuggerDisplay("({m_x}, {m_y}, {m_z})")]
   [Serializable]
-  public struct Point3f : IEquatable<Point3f>, IComparable<Point3f>, IComparable
+  public struct Point3f : IEquatable<Point3f>, IComparable<Point3f>, IComparable, IEpsilonFComparable<Point3f>
   {
     internal float m_x;
     internal float m_y;
@@ -305,6 +317,19 @@ namespace Rhino.Geometry
     public bool Equals(Point3f point)
     {
       return this == point;
+    }
+
+    /// <summary>
+    /// Check that all values in other are withing epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Point3f other, float epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon) &&
+             RhinoMath.EpsilonEquals(m_z, other.m_z, epsilon);
     }
 
     /// <summary>
@@ -535,7 +560,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 8)]
   [DebuggerDisplay("({m_x}, {m_y})")]
   [Serializable]
-  public struct Vector2f : IEquatable<Vector2f>, IComparable<Vector2f>, IComparable
+  public struct Vector2f : IEquatable<Vector2f>, IComparable<Vector2f>, IComparable, IEpsilonFComparable<Vector2f>
   {
     internal float m_x;
     internal float m_y;
@@ -570,6 +595,17 @@ namespace Rhino.Geometry
       return this == vector;
     }
 
+    /// <summary>
+    /// Check that all values in other are withing epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Vector2f other, float epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon);
+    }
     /// <summary>
     /// Compares this <see cref="Vector2f" /> with another <see cref="Vector2f" />.
     /// <para>Components evaluation priority is first X, then Y.</para>
@@ -705,7 +741,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 4, Size = 12)]
   [DebuggerDisplay("({m_x}, {m_y}, {m_z})")]
   [Serializable]
-  public struct Vector3f : IEquatable<Vector3f>, IComparable<Vector3f>, IComparable
+  public struct Vector3f : IEquatable<Vector3f>, IComparable<Vector3f>, IComparable, IEpsilonFComparable<Vector3f>
   {
     #region members
     internal float m_x;
@@ -805,6 +841,19 @@ namespace Rhino.Geometry
     public bool Equals(Vector3f vector)
     {
       return this == vector;
+    }
+    
+    /// <summary>
+    /// Check that all values in other are withing epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Vector3f other, float epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon) &&
+             RhinoMath.EpsilonEquals(m_z, other.m_z, epsilon);
     }
 
     /// <summary>

@@ -234,6 +234,11 @@ namespace Rhino.Geometry
   /// <summary>
   /// Defines the extremes of a curve through a flagged enumeration. 
   /// </summary>
+  /// <example>
+  /// <code source='examples\vbnet\ex_extendcurve.vb' lang='vbnet'/>
+  /// <code source='examples\cs\ex_extendcurve.cs' lang='cs'/>
+  /// <code source='examples\py\ex_extendcurve.py' lang='py'/>
+  /// </example>
   [FlagsAttribute]
   public enum CurveEnd : int
   {
@@ -352,7 +357,6 @@ namespace Rhino.Geometry
       IntPtr ptr = UnsafeNativeMethods.RHC_RhinoInterpCurve(degree, count, ptArray, startTangent, endTangent, (int)knots);
       return GeometryBase.CreateGeometryHelper(ptr, null) as NurbsCurve;
     }
-#endif
 
 #if !USING_V5_SDK
     //David: this function is disabled in the public SDK until I can get it to work right.
@@ -383,6 +387,7 @@ namespace Rhino.Geometry
       return GeometryBase.CreateGeometryHelper(ptr, null) as NurbsCurve;
     }
 #endif
+#endif //RHINO_SDK
 
     /// <summary>
     /// Constructs a curve from a set of control-point locations.
@@ -496,8 +501,6 @@ namespace Rhino.Geometry
       return null;
     }
 
-#if USING_V5_SDK
-
     /// <summary>
     /// Makes a curve blend between 2 curves at the parameters specified
     /// with the directions and continuities specified
@@ -525,7 +528,66 @@ namespace Rhino.Geometry
       IntPtr pCurve = UnsafeNativeMethods.CRhinoBlend_CurveBlend(pConstCurve0, t0, reverse0, (int)continuity0, pConstCurve1, t1, reverse1, (int)continuity1);
       return GeometryBase.CreateGeometryHelper(pCurve, null) as Curve;
     }
-#endif
+
+    /// <summary>
+    /// Creates curves between two open or closed input curves. Uses the control points of the curves for finding tween curves.
+    /// That means the first control point of first curve is matched to first control point of the second curve and so on.
+    /// There is no matching of curves direction. Caller must match input curves direction before calling the function.
+    /// </summary>
+    /// <param name="curve0">The first, or starting, curve.</param>
+    /// <param name="curve1">The second, or ending, curve.</param>
+    /// <param name="numCurves">Number of tween curves to create.</param>
+    /// <returns>An array of joint curves. This array can be empty.</returns>
+    public static Curve[] CreateTweenCurves(Curve curve0, Curve curve1, int numCurves)
+    {
+      IntPtr pConstCurve0 = curve0.ConstPointer();
+      IntPtr pConstCurve1 = curve1.ConstPointer();
+      SimpleArrayCurvePointer output = new SimpleArrayCurvePointer();
+      IntPtr outputPtr = output.NonConstPointer();
+      bool rc = UnsafeNativeMethods.RHC_RhinoTweenCurves( pConstCurve0, pConstCurve1, numCurves, outputPtr);
+      return rc ? output.ToNonConstArray() : new Curve[0];
+    }
+
+    /// <summary>
+    /// Creates curves between two open or closed input curves. Make the structure of input curves compatible if needed.
+    /// Refits the input curves to have the same structure. The resulting curves are usually more complex than input unless
+    /// input curves are compatible and no refit is needed. There is no matching of curves direction.
+    /// Caller must match input curves direction before calling the function.
+    /// </summary>
+    /// <param name="curve0">The first, or starting, curve.</param>
+    /// <param name="curve1">The second, or ending, curve.</param>
+    /// <param name="numCurves">Number of tween curves to create.</param>
+    /// <returns>An array of joint curves. This array can be empty.</returns>
+    public static Curve[] CreateTweenCurvesWithMatching(Curve curve0, Curve curve1, int numCurves)
+    {
+      IntPtr pConstCurve0 = curve0.ConstPointer();
+      IntPtr pConstCurve1 = curve1.ConstPointer();
+      SimpleArrayCurvePointer output = new SimpleArrayCurvePointer();
+      IntPtr outputPtr = output.NonConstPointer();
+      bool rc = UnsafeNativeMethods.RHC_RhinoTweenCurvesWithMatching(pConstCurve0, pConstCurve1, numCurves, outputPtr);
+      return rc ? output.ToNonConstArray() : new Curve[0];
+    }
+
+    /// <summary>
+    /// Creates curves between two open or closed input curves. Use sample points method to make curves compatible.
+    /// This is how the algorithm workd: Divides the two curves into an equal number of points, finds the midpoint between the 
+    /// corresponding points on the curves and interpolates the tween curve through those points. There is no matching of curves
+    /// direction. Caller must match input curves direction before calling the function.
+    /// </summary>
+    /// <param name="curve0">The first, or starting, curve.</param>
+    /// <param name="curve1">The second, or ending, curve.</param>
+    /// <param name="numCurves">Number of tween curves to create.</param>
+    /// <param name="numSamples">Number of sample points along input curves.</param>
+    /// <returns>>An array of joint curves. This array can be empty.</returns>
+    public static Curve[] CreateTweenCurvesWithSampling(Curve curve0, Curve curve1, int numCurves, int numSamples)
+    {
+      IntPtr pConstCurve0 = curve0.ConstPointer();
+      IntPtr pConstCurve1 = curve1.ConstPointer();
+      SimpleArrayCurvePointer output = new SimpleArrayCurvePointer();
+      IntPtr outputPtr = output.NonConstPointer();
+      bool rc = UnsafeNativeMethods.RHC_RhinoTweenCurveWithSampling(pConstCurve0, pConstCurve1, numCurves, numSamples, outputPtr);
+      return rc ? output.ToNonConstArray() : new Curve[0];
+    }
 
     /// <summary>
     /// Joins a collection of curve segments together.
@@ -665,6 +727,63 @@ namespace Rhino.Geometry
         arc = new Arc(fillet_plane, plane.Origin, radius, angle);
       }
       return arc;
+    }
+
+    /// <summary>
+    /// Creates a tangent arc between two curves and trims or extends the curves to the arc.
+    /// </summary>
+    /// <param name="curve0">The first curve to fillet.</param>
+    /// <param name="point0">
+    /// A point on the first curve that is near the end where the fillet will
+    /// be created.
+    /// </param>
+    /// <param name="curve1">The second curve to fillet.</param>
+    /// <param name="point1">
+    /// A point on the second curve that is near the end where the fillet will
+    /// be created.
+    /// </param>
+    /// <param name="radius">The radius of the fillet.</param>
+    /// <param name="join">Join the output curves.</param>
+    /// <param name="trim">
+    /// Trim copies of the input curves to the output fillet curve.
+    /// </param>
+    /// <param name="arcExtension">
+    /// Applies when arcs are filleted but need to be extended to meet the
+    /// fillet curve or chamfer line. If true, then the arc is extended
+    /// maintaining its validity. If false, then the arc is extended with a
+    /// line segment, which is joined to the arc converting it to a polycurve.
+    /// </param>
+    /// <param name="tolerance">
+    /// The tolerance, generally the document's absolute tolerance.
+    /// </param>
+    /// <param name="angleTolerance"></param>
+    /// <returns>
+    /// The results of the fillet operation. The number of output curves depends
+    /// on the input curves and the values of the parameters that were used
+    /// during the fillet operation. In most cases, the output array will contain
+    /// either one or three curves, although two curves can be returned if the
+    /// radius is zero and join = false.
+    /// For example, if both join and trim = true, then the output curve
+    /// will be a polycurve containing the fillet curve joined with trimmed copies
+    /// of the input curves. If join = false and trim = true, then three curves,
+    /// the fillet curve and trimmed copies of the input curves, will be returned.
+    /// If both join and trim = false, then just the fillet curve is returned.
+    /// </returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_filletcurves.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_filletcurves.cs' lang='cs'/>
+    /// <code source='examples\py\ex_filletcurves.py' lang='py'/>
+    /// </example>
+    public static Curve[] CreateFilletCurves( Curve curve0, Point3d point0, Curve curve1, Point3d point1, double radius, bool join, bool trim, bool arcExtension, double tolerance, double angleTolerance)
+    {
+      IntPtr const_ptr_curve0 = curve0.ConstPointer();
+      IntPtr const_ptr_curve1 = curve1.ConstPointer();
+      using (var output_array = new SimpleArrayCurvePointer())
+      {
+        IntPtr ptr_output_array = output_array.NonConstPointer();
+        UnsafeNativeMethods.RHC_RhFilletCurve(const_ptr_curve0, point0, const_ptr_curve1, point1, radius, join, trim, arcExtension, tolerance, angleTolerance, ptr_output_array);
+        return output_array.ToNonConstArray();
+      }
     }
 
     const int idxBooleanUnion = 0;
@@ -971,7 +1090,7 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
-    /// Computes the distance between two arbitrary curves.
+    /// Computes the distances between two arbitrary curves that overlap.
     /// </summary>
     /// <param name="curveA">A curve.</param>
     /// <param name="curveB">Another curve.</param>
@@ -983,6 +1102,11 @@ namespace Rhino.Geometry
     /// <param name="minDistanceParameterA">The minimum distance parameter on curve A. This is an out reference argument.</param>
     /// <param name="minDistanceParameterB">The minimum distance parameter on curve B. This is an out reference argument.</param>
     /// <returns>true if the operation succeeded; otherwise false.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_crvdeviation.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_crvdeviation.cs' lang='cs'/>
+    /// <code source='examples\py\ex_crvdeviation.py' lang='py'/>
+    /// </example>
     public static bool GetDistancesBetweenCurves(Curve curveA, Curve curveB, double tolerance,
       out double maxDistance, out double maxDistanceParameterA, out double maxDistanceParameterB,
       out double minDistance, out double minDistanceParameterA, out double minDistanceParameterB)
@@ -1022,7 +1146,7 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
-    /// Determines if tro coplanar curves collide (intersect).
+    /// Determines if two coplanar curves collide (intersect).
     /// </summary>
     /// <param name="curveA">A curve.</param>
     /// <param name="curveB">Another curve.</param>
@@ -1057,6 +1181,13 @@ namespace Rhino.Geometry
 
     internal override IntPtr _InternalGetConstPointer()
     {
+      Rhino.Geometry.CurveHolder holder2 = m__parent as Rhino.Geometry.CurveHolder;
+      if (null != holder2)
+      {
+        return holder2.ConstCurvePointer();
+      }
+
+
       if (m_subobject_index >= 0)
       {
         Rhino.Geometry.PolyCurve polycurve_parent = m__parent as Rhino.Geometry.PolyCurve;
@@ -1092,6 +1223,11 @@ namespace Rhino.Geometry
     /// Constructs an exact duplicate of this curve.
     /// </summary>
     /// <returns>An exact copy of this curve.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_curvereverse.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_curvereverse.cs' lang='cs'/>
+    /// <code source='examples\py\ex_curvereverse.py' lang='py'/>
+    /// </example>
     public Curve DuplicateCurve()
     {
       Curve rc = Duplicate() as Curve;
@@ -1103,7 +1239,7 @@ namespace Rhino.Geometry
       return new Curve(IntPtr.Zero, null);
     }
 
-#if USING_V5_SDK && RHINO_SDK
+#if RHINO_SDK
     /// <summary>
     /// Polylines will be exploded into line segments. ExplodeCurves will
     /// return the curves in topological order.
@@ -1139,11 +1275,13 @@ namespace Rhino.Geometry
     /// <param name="disposing">true if the call comes from the Dispose() method; false if it comes from the Garbage Collector finalizer.</param>
     protected override void Dispose(bool disposing)
     {
+#if RHINO_SDK
       if (IntPtr.Zero != m_pCurveDisplay)
       {
         UnsafeNativeMethods.CurveDisplay_Delete(m_pCurveDisplay);
         m_pCurveDisplay = IntPtr.Zero;
       }
+#endif
       base.Dispose(disposing);
     }
     #endregion
@@ -1169,16 +1307,19 @@ namespace Rhino.Geometry
     /// </summary>
     protected override void NonConstOperation()
     {
+#if RHINO_SDK
       if (IntPtr.Zero != m_pCurveDisplay)
       {
         UnsafeNativeMethods.CurveDisplay_Delete(m_pCurveDisplay);
         m_pCurveDisplay = IntPtr.Zero;
       }
+#endif
       base.NonConstOperation();
     }
 
-    internal IntPtr m_pCurveDisplay = IntPtr.Zero;
 #if RHINO_SDK
+    internal IntPtr m_pCurveDisplay = IntPtr.Zero;
+
     internal virtual void Draw(Display.DisplayPipeline pipeline, System.Drawing.Color color, int thickness)
     {
       IntPtr pDisplayPipeline = pipeline.NonConstPointer();
@@ -1274,6 +1415,11 @@ namespace Rhino.Geometry
     /// Test a curve to see if it is linear to within RhinoMath.ZeroTolerance units (1e-12).
     /// </summary>
     /// <returns>true if the curve is linear.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public bool IsLinear()
     {
       return IsLinear(RhinoMath.ZeroTolerance);
@@ -1301,6 +1447,11 @@ namespace Rhino.Geometry
     /// represented as a polyline.
     /// </summary>
     /// <returns>true if this curve can be represented as a polyline; otherwise, false.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public bool IsPolyline()
     {
       IntPtr ptr = ConstPointer();
@@ -1469,6 +1620,11 @@ namespace Rhino.Geometry
     /// </summary>
     /// <param name="circle">On success, the Circle will be filled in.</param>
     /// <returns>true if the curve could be converted into a Circle.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_customgeometryfilter.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_customgeometryfilter.cs' lang='cs'/>
+    /// <code source='examples\py\ex_customgeometryfilter.py' lang='py'/>
+    /// </example>
     public bool TryGetCircle(out Circle circle)
     {
       return TryGetCircle(out circle, RhinoMath.ZeroTolerance);
@@ -1574,6 +1730,11 @@ namespace Rhino.Geometry
     /// <returns>
     /// true if the curve is planar (flat) to within RhinoMath.ZeroTolerance units (1e-12).
     /// </returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public bool IsPlanar()
     {
       return IsPlanar(RhinoMath.ZeroTolerance);
@@ -1791,12 +1952,18 @@ namespace Rhino.Geometry
     /// </summary>
     /// <returns>true on success, false on failure.</returns>
     /// <remarks>If reversed, the domain changes from [a,b] to [-b,-a]</remarks>
+    /// <example>
+    /// <code source='examples\vbnet\ex_curvereverse.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_curvereverse.cs' lang='cs'/>
+    /// <code source='examples\py\ex_curvereverse.py' lang='py'/>
+    /// </example>
     public bool Reverse()
     {
       IntPtr ptr = NonConstPointer();
       return UnsafeNativeMethods.ON_Curve_Reverse(ptr);
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Finds parameter of the point on a curve that is closest to testPoint.
     /// If the maximumDistance parameter is > 0, then only points whose distance
@@ -1831,7 +1998,6 @@ namespace Rhino.Geometry
       return rc;
     }
 
-#if USING_V5_SDK && RHINO_SDK
     /// <summary>
     /// Finds the object (and the closest point in that object) that is closest to
     /// this curve. <para><see cref="Brep">Breps</see>, <see cref="Surface">surfaces</see>,
@@ -1898,9 +2064,7 @@ namespace Rhino.Geometry
       int which;
       return ClosestPoints(a, out pointOnThisCurve, out pointOnOtherCurve, out which, 0.0);
     }
-#endif
 
-#if RHINO_SDK
     /// <summary>
     /// Computes the relationship between a point and a closed curve region. 
     /// This curve must be closed or the return value will be Unset.
@@ -1966,6 +2130,11 @@ namespace Rhino.Geometry
     /// <param name="t">Evaluation parameter.</param>
     /// <returns>Point (location of curve at the parameter t).</returns>
     /// <remarks>No error handling.</remarks>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public Point3d PointAt(double t)
     {
       Point3d rc = new Point3d();
@@ -2000,6 +2169,7 @@ namespace Rhino.Geometry
       }
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Gets a point at a certain length along the curve. The length must be 
     /// non-negative and less than or equal to the length of the curve. 
@@ -2029,6 +2199,7 @@ namespace Rhino.Geometry
       double t;
       return !NormalizedLengthParameter(length, out t) ? Point3d.Unset : PointAt(t);
     }
+#endif
 
     /// <summary>Forces the curve to start at a specified point. 
     /// Not all curve types support this operation.</summary>
@@ -2133,6 +2304,11 @@ namespace Rhino.Geometry
     /// <param name="t">Evaluation parameter.</param>
     /// <returns>Curvature vector of the curve at the parameter t.</returns>
     /// <remarks>No error handling.</remarks>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public Vector3d CurvatureAt(double t)
     {
       Vector3d rc = new Vector3d();
@@ -2246,6 +2422,7 @@ namespace Rhino.Geometry
     #endregion
 
     #region size related methods
+#if RHINO_SDK
     /// <summary>
     /// Gets the length of the curve with a fractional tolerance of 1.0e-8.
     /// </summary>
@@ -2623,7 +2800,6 @@ namespace Rhino.Geometry
       return null;
     }
 
-#if RHINO_SDK
     /// <summary>
     /// Divide the curve into a number of equal-length segments.
     /// </summary>
@@ -2849,6 +3025,7 @@ namespace Rhino.Geometry
       return Trim(domain.T0, domain.T1);
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Shortens a curve by a given length
     /// </summary>
@@ -2879,6 +3056,7 @@ namespace Rhino.Geometry
       }
       return Trim(t0,t1);
     }
+#endif
 
     /// <summary>
     /// Splits (divides) the curve at the specified parameter. 
@@ -3000,6 +3178,17 @@ namespace Rhino.Geometry
     {
       return Extend(domain.T0, domain.T1);
     }
+
+    static UnsafeNativeMethods.ExtendCurveConsts ConvertExtensionStyle(CurveExtensionStyle style)
+    {
+      if (style == CurveExtensionStyle.Arc)
+        return UnsafeNativeMethods.ExtendCurveConsts.ExtendTypeArc;
+      if (style == CurveExtensionStyle.Line)
+        return UnsafeNativeMethods.ExtendCurveConsts.ExtendTypeLine;
+
+      return UnsafeNativeMethods.ExtendCurveConsts.ExtendTypeSmooth;
+    }
+
     /// <summary>
     /// Extends a curve by a specific length.
     /// </summary>
@@ -3023,13 +3212,9 @@ namespace Rhino.Geometry
         l1 = 0.0;
 
       IntPtr ptr = ConstPointer();
-      IntPtr rc = UnsafeNativeMethods.RHC_RhinoExtendCurve(ptr, l0, l1, (int)style);
+      IntPtr rc = UnsafeNativeMethods.RHC_RhinoExtendCurve(ptr, l0, l1, ConvertExtensionStyle(style));
       return GeometryBase.CreateGeometryHelper(rc, null) as Curve;
     }
-
-    const int idxExtendTypeLine = 0;
-    const int idxExtendTypeArc = 1;
-    const int idxExtendTypeSmooth = 2;
 
     /// <summary>
     /// Extends a curve until it intersects a collection of objects.
@@ -3038,6 +3223,11 @@ namespace Rhino.Geometry
     /// <param name="style">The style or type of extension to use.</param>
     /// <param name="geometry">A collection of objects. Allowable object types are Curve, Surface, Brep.</param>
     /// <returns>New extended curve result on success, null on failure.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_extendcurve.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_extendcurve.cs' lang='cs'/>
+    /// <code source='examples\py\ex_extendcurve.py' lang='py'/>
+    /// </example>
     public Curve Extend(CurveEnd side, CurveExtensionStyle style, System.Collections.Generic.IEnumerable<GeometryBase> geometry)
     {
       if (CurveEnd.None == side)
@@ -3054,13 +3244,7 @@ namespace Rhino.Geometry
       {
         IntPtr geometryArrayPtr = geometryArray.ConstPointer();
 
-        int extendStyle = idxExtendTypeLine;
-        if (style == CurveExtensionStyle.Arc)
-          extendStyle = idxExtendTypeArc;
-        else if (style == CurveExtensionStyle.Smooth)
-          extendStyle = idxExtendTypeSmooth;
-
-        IntPtr rc = UnsafeNativeMethods.RHC_RhinoExtendCurve1(pConstPtr, extendStyle, _side, geometryArrayPtr);
+        IntPtr rc = UnsafeNativeMethods.RHC_RhinoExtendCurve1(pConstPtr, ConvertExtensionStyle(style), _side, geometryArrayPtr);
         return GeometryBase.CreateGeometryHelper(rc, null) as Curve;
       }
     }
@@ -3084,13 +3268,7 @@ namespace Rhino.Geometry
 
       IntPtr pConstPtr = ConstPointer();
 
-      int extendStyle = idxExtendTypeLine;
-      if (style == CurveExtensionStyle.Arc)
-        extendStyle = idxExtendTypeArc;
-      else if (style == CurveExtensionStyle.Smooth)
-        extendStyle = idxExtendTypeSmooth;
-
-      IntPtr rc = UnsafeNativeMethods.RHC_RhinoExtendCurve2(pConstPtr, extendStyle, _side, endPoint);
+      IntPtr rc = UnsafeNativeMethods.RHC_RhinoExtendCurve2(pConstPtr, ConvertExtensionStyle(style), _side, endPoint);
       return GeometryBase.CreateGeometryHelper(rc, null) as Curve;
     }
 
@@ -3576,7 +3754,6 @@ namespace Rhino.Geometry
         return null;
       return curves;
     }
-#endif
 
     /// <summary>
     /// Offset this curve on a brep face surface. This curve must lie on the surface.
@@ -3712,8 +3889,6 @@ namespace Rhino.Geometry
       Brep b = Brep.CreateFromSurface(surface);
       return OffsetOnSurface(b.Faces[0], curveParameters, offsetDistances, fittingTolerance);
     }
-
-#if USING_V5_SDK && RHINO_SDK
 
     /// <summary>
     /// Pulls this curve to a brep face and returns the result of that operation.

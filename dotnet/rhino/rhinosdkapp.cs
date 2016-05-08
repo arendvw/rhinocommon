@@ -1,5 +1,9 @@
 using System;
+using System.Diagnostics;
+#if RHINO_SDK
 using Rhino.ApplicationSettings;
+using Rhino.Geometry;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.ApplicationSettings
 {
@@ -50,7 +54,6 @@ namespace Rhino.ApplicationSettings
   }
 }
 
-#if RHINO_SDK
 namespace Rhino
 {
   /// <summary>
@@ -145,7 +148,21 @@ namespace Rhino
     const int idxInstallation = 4;
     const int idxNodeType = 5;
     internal const int idxInScriptRunner = 6;
+    const int idxValidationGracePeriodDaysLeft = 7;
+    const int idxDaysUntilExpiration = 8;
+    const int idxLicenseSavesLeft = 9;
+    internal static int GetInt(int which)
+    {
+      return UnsafeNativeMethods.CRhinoApp_GetInt(which);
+    }
 
+
+    const int idxLicenseExpires = 0;
+    const int idxIsLicenseValidated = 1;
+    static bool GetBool(int which)
+    {
+      return UnsafeNativeMethods.CRhinoApp_GetBool(which);
+    }
 
     ///<summary>
     ///Rhino SDK 9 digit SDK version number in the form YYYYMMDDn
@@ -155,7 +172,7 @@ namespace Rhino
     ///</summary>
     public static int SdkVersion
     {
-      get { return UnsafeNativeMethods.CRhinoApp_GetInt(idxSdkVersion); }
+      get { return GetInt(idxSdkVersion); }
     }
 
     ///<summary>
@@ -170,7 +187,7 @@ namespace Rhino
     ///</summary>
     public static int SdkServiceRelease
     {
-      get { return UnsafeNativeMethods.CRhinoApp_GetInt(idxSdkServiceRelease); }
+      get { return GetInt(idxSdkServiceRelease); }
     }
 
     ///<summary>
@@ -178,7 +195,7 @@ namespace Rhino
     ///</summary>
     public static int ExeVersion
     {
-      get { return UnsafeNativeMethods.CRhinoApp_GetInt(idxExeVersion); }
+      get { return GetInt(idxExeVersion); }
     }
 
     ///<summary>
@@ -189,7 +206,7 @@ namespace Rhino
     ///</summary>
     public static int ExeServiceRelease
     {
-      get { return UnsafeNativeMethods.CRhinoApp_GetInt(idxExeServiceRelease); }
+      get { return GetInt(idxExeServiceRelease); }
     }
 
     /// <summary>
@@ -218,12 +235,27 @@ namespace Rhino
     {
       get
       {
-        using (Rhino.Runtime.StringHolder sh = new Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pString = sh.NonConstPointer();
           UnsafeNativeMethods.ON_Revision(pString);
           return sh.ToString();
         }
+      }
+    }
+
+    static Version g_version;
+    /// <summary> File version of the main Rhino process </summary>
+    public static Version Version
+    {
+      get
+      {
+        if( g_version==null )
+        {
+          FileVersionInfo fvi = FileVersionInfo.GetVersionInfo(Process.GetCurrentProcess().MainModule.FileName);
+          g_version = new Version(fvi.ProductMajorPart, fvi.ProductMinorPart, fvi.ProductBuildPart, fvi.ProductPrivatePart);
+        }
+        return g_version;
       }
     }
 
@@ -234,13 +266,14 @@ namespace Rhino
     internal const int idxInstallFolder = 4;
     internal const int idxHelpFilePath = 5;
     internal const int idxDefaultRuiFile = 6;
+    internal const int idxLocalProfileDataFolder = 7;
 
     /// <summary>Gets the product serial number, as seen in Rhino's ABOUT dialog box.</summary>
     public static string SerialNumber
     {
       get
       {
-        using (Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pString = sh.NonConstPointer();
           UnsafeNativeMethods.CRhinoApp_GetString(idxSerialNumber, pString);
@@ -254,7 +287,7 @@ namespace Rhino
     {
       get
       {
-        using (Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pString = sh.NonConstPointer();
           UnsafeNativeMethods.CRhinoApp_GetString(idxApplicationName, pString);
@@ -268,7 +301,7 @@ namespace Rhino
     {
       get
       {
-        int rc = UnsafeNativeMethods.CRhinoApp_GetInt(idxNodeType);
+        int rc = GetInt(idxNodeType);
         return (LicenseNode)rc;
       }
     }
@@ -278,7 +311,7 @@ namespace Rhino
     {
       get
       {
-        int rc = UnsafeNativeMethods.CRhinoApp_GetInt(idxInstallation);
+        int rc = GetInt(idxInstallation);
         return (Installation)rc;
       }
     }
@@ -415,7 +448,7 @@ namespace Rhino
     {
       get
       {
-        using (Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pString = sh.NonConstPointer();
           UnsafeNativeMethods.CRhinoApp_GetString(idxCommandPrompt, pString);
@@ -435,7 +468,7 @@ namespace Rhino
     {
       get
       {
-        using (Rhino.Runtime.StringHolder holder = new Rhino.Runtime.StringHolder())
+        using (var holder = new StringHolder())
         {
           UnsafeNativeMethods.CRhinoApp_GetCommandHistoryWindowText(holder.NonConstPointer());
           string rc = holder.ToString();
@@ -681,6 +714,115 @@ namespace Rhino
       return GetPlugInObject(plugin_id);
     }
 
+    /// <summary>
+    /// If licenseType is an evaluation license, returns true. An evaluation license limits the ability of
+    /// Rhino to save based on either the number of saves or a fixed period of time.
+    /// </summary>
+    /// <seealso cref="Installation"/>
+    /// <param name="licenseType"></param>
+    /// <returns>true if licenseType is an evaluation license. false otherwise</returns>
+    public static bool IsInstallationEvaluation(Installation licenseType)
+    {
+      return (licenseType == Installation.Evaluation ||
+              licenseType == Installation.EvaluationTimed);
+    }
+
+    /// <summary>
+    /// If licenseType is a commercial license, returns true. A commercial license grants
+    /// full use of the product.
+    /// </summary>
+    /// <param name="licenseType"></param>
+    /// <seealso cref="Installation"/>
+    /// <returns>true if licenseType is a commercial license. false otherwise</returns>
+    public static bool IsInstallationCommercial(Installation licenseType)
+    {
+      return (licenseType == Installation.Commercial     ||
+              licenseType == Installation.Corporate      ||
+              licenseType == Installation.Educational    ||
+              licenseType == Installation.EducationalLab ||
+              licenseType == Installation.NotForResale   ||
+              licenseType == Installation.NotForResaleLab);
+    }
+
+    /// <summary>
+    /// If licenseType is a beta license, returns true. A beta license grants
+    /// full use of the product during the pre-release development period.
+    /// </summary>
+    /// <param name="licenseType"></param>
+    /// <seealso cref="Installation"/>
+    /// <returns>true if licenseType is a beta license. false otherwise</returns>
+    public static bool IsInstallationBeta(Installation licenseType)
+    {
+      return (licenseType == Installation.Beta || licenseType == Installation.BetaLab);
+    }
+
+    /// <summary>
+    /// Returns 
+    ///   true if the license will expire
+    ///   false otherwise
+    /// </summary>
+    public static bool LicenseExpires
+    {
+      get { return GetBool(idxLicenseExpires); }
+    }
+
+    /// <summary>
+    /// Returns 
+    ///   true if the license is validated
+    ///   false otherwise
+    /// </summary>
+    public static bool IsLicenseValidated
+    {
+      get { return GetBool(idxIsLicenseValidated); }
+    }
+
+    /// <summary>
+    /// Returns number of days within which validation must occur. Zero when
+    ///   validation grace period has expired.
+    /// Raises InvalidLicenseTypeException if LicenseType is one of:
+    ///   EvaluationSaveLimited
+    ///   EvaluationTimeLimited
+    ///   Viewer
+    ///   Unknown
+    /// </summary>
+    public static int ValidationGracePeriodDaysLeft
+    {
+      get { return GetInt(idxValidationGracePeriodDaysLeft); }
+    }
+
+    /// <summary>
+    /// Returns number of days until license expires. Zero when
+    ///   license is expired.
+    /// Raises InvalidLicenseTypeException if LicenseExpires
+    /// would return false.
+    /// </summary>
+    public static int DaysUntilExpiration
+    {
+      get { return GetInt(idxDaysUntilExpiration); }
+    }
+
+    /// <summary>
+    /// Returns number of saves left in save-limited Evaluation. Zero when
+    ///   evaluation is expired.
+    /// Raises InvalidLicenseTypeException if LicenseType != EvaluationSaveLimited
+    /// </summary>
+    public static int LicenseSavesLeft
+    {
+      get { return GetInt(idxLicenseSavesLeft); }
+    }
+
+    /// <summary>
+    /// Causes Rhino to display UI asking the user to enter a license for Rhino or use one from the Zoo.
+    /// </summary>
+    /// <param name="standAlone">True to ask for a stand-alone license, false to ask the user for a license from the Zoo</param>
+    /// <param name="parent">Parent window for the user interface dialog.</param>
+    /// <returns></returns>
+    public static bool AskUserForRhinoLicense(bool standAlone, System.Windows.Forms.IWin32Window parent)
+    {
+      IntPtr pParent = parent != null ? parent.Handle : IntPtr.Zero;
+      return UnsafeNativeMethods.CRhinoApp_AskUserForRhinoLicense(standAlone, pParent);
+    }
+
     #region events
     // Callback that doesn't pass any parameters or return values
     internal delegate void RhCmnEmptyCallback();
@@ -703,7 +845,7 @@ namespace Rhino
     private static EventHandler m_escape_key;
 
     /// <summary>
-    /// Can add or removed delagates that are raised when the escape key is clicked.
+    /// Can add or removed delegates that are raised when the escape key is clicked.
     /// </summary>
     public static event EventHandler EscapeKeyPressed
     {
@@ -722,6 +864,59 @@ namespace Rhino
         if (null == m_escape_key)
         {
           UnsafeNativeMethods.RHC_SetEscapeKeyCallback(null);
+          m_OnEscapeKey = null;
+        }
+      }
+    }
+
+    // Callback that doesn't pass any parameters or return values
+    /// <summary>
+    /// KeyboardEvent delegate
+    /// </summary>
+    /// <param name="key"></param>
+    public delegate void KeyboardHookEvent(int key);
+
+    private static KeyboardHookEvent m_OnKeyboardEvent;
+    private static void OnKeyboardEvent(int key)
+    {
+      if (m_keyboard_event != null)
+      {
+        try
+        {
+          m_keyboard_event(key);
+        }
+        catch (Exception ex)
+        {
+          Runtime.HostUtils.ExceptionReport(ex);
+        }
+      }
+    }
+
+    /// <summary>
+    /// 
+    /// </summary>
+    private static KeyboardHookEvent m_keyboard_event;
+
+    /// <summary>
+    /// Can add or removed delegates that are raised by a keyboard event.
+    /// </summary>
+    public static event KeyboardHookEvent KeyboardEvent
+    {
+      add
+      {
+        if (Runtime.HostUtils.ContainsDelegate(m_escape_key, value))
+          return;
+
+        m_keyboard_event += value;
+        m_OnKeyboardEvent = OnKeyboardEvent;
+        UnsafeNativeMethods.RHC_SetKeyboardCallback(m_OnKeyboardEvent);
+      }
+      remove
+      {
+        m_keyboard_event -= value;
+        if (null == m_escape_key)
+        {
+          UnsafeNativeMethods.RHC_SetKeyboardCallback(null);
           m_OnEscapeKey = null;
         }
       }
@@ -1187,6 +1382,19 @@ namespace Rhino.UI
     public static void SetToolTip(string tooltip)
     {
       UnsafeNativeMethods.CRhinoApp_SetCursorTooltip(tooltip);
+    }
+
+    /// <summary>
+    /// Retrieves the position of the mouse cursor, in screen coordinates
+    /// </summary>
+    public static Point2d Location
+    {
+      get
+      {
+        UnsafeNativeMethods.Point pt;
+        UnsafeNativeMethods.GetCursorPos(out pt);
+        return new Point2d(pt.X, pt.Y);
+      }
     }
   }
 

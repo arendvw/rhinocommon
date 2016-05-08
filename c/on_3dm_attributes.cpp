@@ -1,23 +1,39 @@
 #include "StdAfx.h"
 
-// I think that sooner or later, these functions should be moved into core opennurbs.dll
-RH_C_FUNCTION int ON_3dmObjectAttributes_GetSetInt( ON_3dmObjectAttributes* ptr, int which, bool set, int set_value )
+RH_C_FUNCTION ON_3dmObjectAttributes* ON_3dmObjectAttributes_New(const ON_3dmObjectAttributes* pOther)
 {
-  const int idxMode = 0;
-  const int idxLineTypeSource = 1;
-  const int idxColorSource = 2;
-  const int idxPlotColorSource = 3;
-  const int idxPlotWeightSource = 4;
-  const int idxDisplayMode = 5;
-  const int idxLayerIndex = 6;
-  const int idxLinetypeIndex = 7;
-  const int idxMaterialIndex = 8;
-  const int idxMaterialSource = 9;
-  const int idxObjectDecoration = 10;
-  const int idxWireDensity = 11;
-  const int idxSpace = 12;
-  const int idxGroupCount = 13;
+  if( NULL==pOther )
+    return new ON_3dmObjectAttributes();
+  return new ON_3dmObjectAttributes(*pOther);
+}
 
+RH_C_FUNCTION void ON_3dmObjectAttributes_Delete(ON_3dmObjectAttributes* pointer)
+{
+  if (pointer) delete pointer;
+}
+
+enum ObjectAttrsInteger : int
+{
+  oaiMode = 0,
+  oaiLineTypeSource = 1,
+  oaiColorSource = 2,
+  oaiPlotColorSource = 3,
+  oaiPlotWeightSource = 4,
+  oaiDisplayMode = 5,
+  oaiLayerIndex = 6,
+  oaiLinetypeIndex = 7,
+  oaiMaterialIndex = 8,
+  oaiMaterialSource = 9,
+  oaiObjectDecoration = 10,
+  oaiWireDensity = 11,
+  oaiSpace = 12,
+  oaiGroupCount = 13,
+  oaiDisplayOrder = 14
+};
+
+// I think that sooner or later, these functions should be moved into core opennurbs.dll
+RH_C_FUNCTION int ON_3dmObjectAttributes_GetSetInt( ON_3dmObjectAttributes* ptr, enum ObjectAttrsInteger which, bool set, int set_value )
+{
   int rc = set_value;
   if( ptr )
   {
@@ -25,49 +41,52 @@ RH_C_FUNCTION int ON_3dmObjectAttributes_GetSetInt( ON_3dmObjectAttributes* ptr,
     {
       switch( which )
       {
-      case idxMode:
+      case oaiMode:
         ptr->SetMode( ON::ObjectMode(set_value) );
         break;
-      case idxLineTypeSource:
+      case oaiLineTypeSource:
         ptr->SetLinetypeSource( ON::ObjectLinetypeSource(set_value) );
         break;
-      case idxColorSource:
+      case oaiColorSource:
         ptr->SetColorSource( ON::ObjectColorSource(set_value) );
         break;
-      case idxPlotColorSource:
+      case oaiPlotColorSource:
         ptr->SetPlotColorSource( ON::PlotColorSource(set_value) );
         break;
-      case idxPlotWeightSource:
+      case oaiPlotWeightSource:
         ptr->SetPlotWeightSource( ON::PlotWeightSource(set_value) );
         break;
-      case idxDisplayMode:
+      case oaiDisplayMode:
         ptr->SetDisplayMode( ON::DisplayMode(set_value) );
         break;
-      case idxLayerIndex:
+      case oaiLayerIndex:
         ptr->m_layer_index = set_value;
         break;
-      case idxLinetypeIndex:
+      case oaiLinetypeIndex:
         ptr->m_linetype_index = set_value;
         break;
-      case idxMaterialIndex:
+      case oaiMaterialIndex:
         ptr->m_material_index = set_value;
         break;
-      case idxMaterialSource:
+      case oaiMaterialSource:
         ptr->SetMaterialSource( ON::ObjectMaterialSource(set_value) );
         break;
-      case idxObjectDecoration:
+      case oaiObjectDecoration:
         ptr->m_object_decoration = ON::ObjectDecoration(set_value);
         break;
-      case idxWireDensity:
+      case oaiWireDensity:
         // 28-Feb-2012 Dale Fugier, -1 is acceptable
         // ptr->m_wire_density = set_value<0?0:set_value;
         ptr->m_wire_density = set_value<-1?-1:set_value;
         break;
-      case idxSpace:
+      case oaiSpace:
         ptr->m_space = ON::ActiveSpace(set_value);
         break;
-      case idxGroupCount:
+      case oaiGroupCount:
         // no set available
+        break;
+      case oaiDisplayOrder:
+        ptr->m_display_order = set_value;
         break;
       }
     }
@@ -75,59 +94,65 @@ RH_C_FUNCTION int ON_3dmObjectAttributes_GetSetInt( ON_3dmObjectAttributes* ptr,
     {
       switch( which )
       {
-      case idxMode:
+      case oaiMode:
         rc = (int)ptr->Mode();
         break;
-      case idxLineTypeSource:
+      case oaiLineTypeSource:
         rc = (int)ptr->LinetypeSource();
         break;
-      case idxColorSource:
+      case oaiColorSource:
         rc = (int)ptr->ColorSource();
         break;
-      case idxPlotColorSource:
+      case oaiPlotColorSource:
         rc = (int)ptr->PlotColorSource();
         break;
-      case idxPlotWeightSource:
+      case oaiPlotWeightSource:
         rc = (int)ptr->PlotWeightSource();
         break;
-      case idxDisplayMode:
+      case oaiDisplayMode:
         rc = (int)ptr->DisplayMode();
         break;
-      case idxLayerIndex:
+      case oaiLayerIndex:
         rc = ptr->m_layer_index;
         break;
-      case idxLinetypeIndex:
+      case oaiLinetypeIndex:
         rc = ptr->m_linetype_index;
         break;
-      case idxMaterialIndex:
+      case oaiMaterialIndex:
         rc = ptr->m_material_index;
         break;
-      case idxMaterialSource:
+      case oaiMaterialSource:
         rc = (int)ptr->MaterialSource();
         break;
-      case idxObjectDecoration:
+      case oaiObjectDecoration:
         rc = (int)ptr->m_object_decoration;
         break;
-      case idxWireDensity:
+      case oaiWireDensity:
         rc = ptr->m_wire_density;
         break;
-      case idxSpace:
+      case oaiSpace:
         rc = (int)ptr->m_space;
         break;
-      case idxGroupCount:
+      case oaiGroupCount:
         rc = ptr->GroupCount();
+        break;
+      case oaiDisplayOrder:
+        rc = ptr->m_display_order;
+        break;
       }
     }
   }
   return rc;
 }
 
-
-RH_C_FUNCTION bool ON_3dmObjectAttributes_GetSetBool( ON_3dmObjectAttributes* ptr, int which, bool set, bool set_value )
+enum ObjectAttrsBool : int
 {
-  const int idxIsInstanceDefinitionObject = 0;
-  const int idxIsVisible = 1;
+  oabIsInstanceDefinitionObject = 0,
+  oabIsVisible = 1
+};
 
+RH_C_FUNCTION bool ON_3dmObjectAttributes_GetSetBool( ON_3dmObjectAttributes* ptr, enum ObjectAttrsBool which, bool set, bool set_value )
+{
   bool rc = set_value;
   if( ptr )
   {
@@ -135,10 +160,10 @@ RH_C_FUNCTION bool ON_3dmObjectAttributes_GetSetBool( ON_3dmObjectAttributes* pt
     {
       switch(which)
       {
-      case idxIsInstanceDefinitionObject:
+      case oabIsInstanceDefinitionObject:
         // nothing to set
         break;
-      case idxIsVisible:
+      case oabIsVisible:
         ptr->SetVisible( set_value );
         break;
       }
@@ -147,10 +172,10 @@ RH_C_FUNCTION bool ON_3dmObjectAttributes_GetSetBool( ON_3dmObjectAttributes* pt
     {
       switch(which)
       {
-      case idxIsInstanceDefinitionObject:
+      case oabIsInstanceDefinitionObject:
         rc = ptr->IsInstanceDefinitionObject();
         break;
-      case idxIsVisible:
+      case oabIsVisible:
         rc = ptr->IsVisible();
         break;
       }
@@ -335,4 +360,148 @@ RH_C_FUNCTION void ON_3dmObjectAttributes_ClearDisplayMode(ON_3dmObjectAttribute
   {
     pObjectAttributes->RemoveDisplayMaterialRef(rhinoViewportId);
   }
+}
+
+
+RH_C_FUNCTION bool ON_3dmObjectAttributes_HasMapping(ON_3dmObjectAttributes* pObjectAttributes)
+{
+  for (int i = 0; i < pObjectAttributes->m_rendering_attributes.m_mappings.Count(); i++)
+  {
+    const ON_MappingRef *pRef = pObjectAttributes->m_rendering_attributes.m_mappings.At(i);
+    if (pRef->m_mapping_channels.Count())
+      return true;
+  }
+
+  return false;
+}
+
+RH_C_FUNCTION const ON_MaterialRef* ON_3dmObjectAttributes_MaterialRef(ON_3dmObjectAttributes* pObjectAttributes, ON_UUID plugInId)
+{
+  if (pObjectAttributes == NULL) return NULL;
+  const ON_MaterialRef* result = pObjectAttributes->m_rendering_attributes.MaterialRef(plugInId);
+  return result;
+}
+
+RH_C_FUNCTION void ON_3dmObjectAttributes_EmptyMaterialRefs(ON_3dmObjectAttributes* pObjectAttributes)
+{
+  if (pObjectAttributes)pObjectAttributes->m_rendering_attributes.m_materials.Empty();
+}
+
+RH_C_FUNCTION int ON_3dmObjectAttributes_MaterialRefCount(ON_3dmObjectAttributes* pObjectAttributes)
+{
+  return (pObjectAttributes ? pObjectAttributes->m_rendering_attributes.m_materials.Count() : 0);
+}
+
+RH_C_FUNCTION int ON_3dmObjectAttributes_MaterialRefIndexOf(ON_3dmObjectAttributes* pObjectAttributes, ON_UUID plugInId)
+{
+  if (pObjectAttributes == NULL) return -1;
+  for (int i = 0, count = pObjectAttributes->m_rendering_attributes.m_materials.Count(); i < count; i++)
+    if (pObjectAttributes->m_rendering_attributes.m_materials[i].m_plugin_id == plugInId)
+      return i;
+  return -1;
+}
+
+RH_C_FUNCTION bool ON_3dmObjectAttributes_RemoveMaterialRefAt(ON_3dmObjectAttributes* pObjectAttributes, int index)
+{
+  if (pObjectAttributes == NULL) return false;
+  if (index < 0 || index >= pObjectAttributes->m_rendering_attributes.m_materials.Count()) return false;
+  pObjectAttributes->m_rendering_attributes.m_materials.Remove(index);
+  return true;
+}
+
+RH_C_FUNCTION const ON_MaterialRef* ON_3dmObjectAttributes_MaterialFromIndex(ON_3dmObjectAttributes* pObjectAttributes, int index)
+{
+  if (pObjectAttributes == NULL || index < 0 || index >= pObjectAttributes->m_rendering_attributes.m_materials.Count()) return NULL;
+  ON_MaterialRef& result = pObjectAttributes->m_rendering_attributes.m_materials[index];
+  return &result;
+}
+
+RH_C_FUNCTION bool ON_3dmObjectAttributes_MaterialRefSource(ON_3dmObjectAttributes* pObjectAttributes, ON_UUID plugInId, int* value)
+{
+  if (pObjectAttributes == NULL || value == NULL) return false;
+  const ON_MaterialRef* mat_ref = pObjectAttributes->m_rendering_attributes.MaterialRef(plugInId);
+  if (mat_ref == NULL) return false;
+  *value = mat_ref->m_material_source;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_3dmObjectAttributes_MaterialId(ON_3dmObjectAttributes* pObjectAttributes, ON_UUID plugInId, ON_UUID* value, bool backFace)
+{
+  if (pObjectAttributes == NULL || value == NULL) return false;
+  const ON_MaterialRef* mat_ref = pObjectAttributes->m_rendering_attributes.MaterialRef(plugInId);
+  if (mat_ref == NULL) return false;
+  *value = backFace ? mat_ref->m_material_backface_id : mat_ref->m_material_id;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_3dmObjectAttributes_MaterialIndex(ON_3dmObjectAttributes* pObjectAttributes, ON_UUID plugInId, int* value, bool backFace)
+{
+  if (pObjectAttributes == NULL || value == NULL) return false;
+  const ON_MaterialRef* mat_ref = pObjectAttributes->m_rendering_attributes.MaterialRef(plugInId);
+  if (mat_ref == NULL) return false;
+  *value = backFace ? mat_ref->m_material_backface_index : mat_ref->m_material_index;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_3dmObjectAttributes_AddMaterialRef(ON_3dmObjectAttributes* pObjectAttributes, const ON_MaterialRef* pMaterialRef)
+{
+  if (pObjectAttributes == NULL || pMaterialRef == NULL || pMaterialRef->m_plugin_id == ON_nil_uuid)
+    return false;
+  ON_MaterialRef* mat_ref = const_cast<ON_MaterialRef*>(pObjectAttributes->m_rendering_attributes.MaterialRef(pMaterialRef->m_plugin_id));
+  if (mat_ref == NULL)
+    mat_ref = &(pObjectAttributes->m_rendering_attributes.m_materials.AppendNew());
+  *mat_ref = *pMaterialRef;
+  return true;
+}
+
+RH_C_FUNCTION ON_MaterialRef* ON_MaterialRef_New(const ON_MaterialRef* other)
+{
+  ON_MaterialRef* result = (other ? new ON_MaterialRef(*other) : new ON_MaterialRef());
+  return result;
+}
+
+RH_C_FUNCTION void ON_MaterialRef_Delete(ON_MaterialRef* pointer)
+{
+  if (pointer) delete pointer;
+}
+
+RH_C_FUNCTION bool ON_MaterialRef_PlugInId(const ON_MaterialRef* pointer, ON_UUID* value)
+{
+  if (pointer == NULL || value == NULL) return false;
+  *value = pointer->m_plugin_id;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_MaterialRef_SetPlugInId(ON_MaterialRef* pointer, ON_UUID value)
+{
+  if (pointer == NULL) return false;
+  pointer->m_plugin_id = value;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_MaterialRef_SetMaterialId(ON_MaterialRef* pointer, ON_UUID value, bool backFace)
+{
+  if (pointer == NULL) return false;
+  if (backFace)
+    pointer->m_material_backface_id = value;
+  else
+    pointer->m_material_id = value;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_MaterialRef_SetMaterialIndex(ON_MaterialRef* pointer, int value, bool backFace)
+{
+  if (pointer == NULL) return false;
+  if (backFace)
+    pointer->m_material_backface_index = value;
+  else
+    pointer->m_material_index = value;
+  return true;
+}
+
+RH_C_FUNCTION bool ON_MaterialRef_SetMaterialSource(ON_MaterialRef* pointer, int value)
+{
+  if (pointer == NULL) return false;
+  pointer->m_material_source = ON::ObjectMaterialSource(value);
+  return true;
 }

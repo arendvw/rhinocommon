@@ -9,7 +9,7 @@ namespace Rhino.Geometry
   /// </summary>
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 152)]
   [Serializable]
-  public struct Cylinder
+  public struct Cylinder : IEpsilonComparable<Cylinder>
   {
     #region members
     Circle m_basecircle;
@@ -225,7 +225,18 @@ namespace Rhino.Geometry
     }
     #endregion
 
-
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Cylinder other, double epsilon)
+    {
+      return m_basecircle.EpsilonEquals(other.m_basecircle, epsilon) &&
+             RhinoMath.EpsilonEquals(m_height1, other.m_height1, epsilon) &&
+             RhinoMath.EpsilonEquals(m_height2, other.m_height2, epsilon);
+    }
 
 //  // evaluate parameters and return point
 //  ON_3dPoint PointAt(

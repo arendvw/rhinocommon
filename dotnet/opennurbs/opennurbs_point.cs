@@ -13,7 +13,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 16)]
   [DebuggerDisplay("({m_t0}, {m_t1})")]
   [Serializable]
-  public struct Interval : ISerializable, IEquatable<Interval>, IComparable<Interval>, IComparable
+  public struct Interval : ISerializable, IEquatable<Interval>, IComparable<Interval>, IComparable, IEpsilonComparable<Interval>
   {
     #region Members
     private double m_t0;
@@ -249,6 +249,11 @@ namespace Rhino.Geometry
     /// <summary>
     /// Gets the average of T0 and T1.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_extendcurve.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_extendcurve.cs' lang='cs'/>
+    /// <code source='examples\py\ex_extendcurve.py' lang='py'/>
+    /// </example>
     public double Mid
     {
       get { return ((RhinoMath.IsValidDouble(m_t0) && RhinoMath.IsValidDouble(m_t1)) ? ((m_t0 == m_t1) ? m_t0 : (0.5 * (m_t0 + m_t1))) : RhinoMath.UnsetValue); }
@@ -566,6 +571,18 @@ namespace Rhino.Geometry
       return rc;
     }
     #endregion
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Interval other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_t0, other.m_t0, epsilon) &&
+             RhinoMath.EpsilonEquals(m_t1, other.m_t1, epsilon);
+    }
   }
 
   /// <summary>
@@ -575,7 +592,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 16)]
   [DebuggerDisplay("({m_x}, {m_y})")]
   [Serializable]
-  public struct Point2d : ISerializable, IEquatable<Point2d>, IComparable<Point2d>, IComparable
+  public struct Point2d : ISerializable, IEquatable<Point2d>, IComparable<Point2d>, IComparable, IEpsilonComparable<Point2d>
   {
     private double m_x;
     private double m_y;
@@ -979,6 +996,18 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Point2d other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon);
+    }
+
+    /// <summary>
     /// Constructs the string representation for the current point.
     /// </summary>
     /// <returns>The point representation in the form X,Y.</returns>
@@ -1092,6 +1121,11 @@ namespace Rhino.Geometry
     /// </summary>
     /// <param name="other">Another point.</param>
     /// <returns>The length of the line between the two points, or 0 if either point is invalid.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_leader.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_leader.cs' lang='cs'/>
+    /// <code source='examples\py\ex_leader.py' lang='py'/>
+    /// </example>
     public double DistanceTo(Point2d other)
     {
       double d;
@@ -1119,7 +1153,6 @@ namespace Rhino.Geometry
 
       double tx = ww * (xform.m_00 * m_x + xform.m_01 * m_y + xform.m_03);
       double ty = ww * (xform.m_10 * m_x + xform.m_11 * m_y + xform.m_13);
-      double tz = ww * (xform.m_20 * m_x + xform.m_21 * m_y + xform.m_23);
       m_x = tx;
       m_y = ty;
     }
@@ -1132,7 +1165,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 24)]
   [DebuggerDisplay("({m_x}, {m_y}, {m_z})")]
   [Serializable]
-  public struct Point3d : ISerializable, IEquatable<Point3d>, IComparable<Point3d>, IComparable
+  public struct Point3d : ISerializable, IEquatable<Point3d>, IComparable<Point3d>, IComparable, IEpsilonComparable<Point3d>
   {
     #region members
     internal double m_x;
@@ -1744,6 +1777,19 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Point3d other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon) &&
+             RhinoMath.EpsilonEquals(m_z, other.m_z, epsilon);
+    }
+
+    /// <summary>
     /// Compares this <see cref="Point3d" /> with another <see cref="Point3d" />.
     /// <para>Component evaluation priority is first X, then Y, then Z.</para>
     /// </summary>
@@ -1861,6 +1907,10 @@ namespace Rhino.Geometry
     /// <para>result = transformation*point</para>
     /// </summary>
     /// <param name="xform">Transformation to apply.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_pointatcursor.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_pointatcursor.cs' lang='cs'/>
+    /// </example>
     public void Transform(Transform xform)
     {
       //David: this method doesn't test for validity. Should it?
@@ -1968,7 +2018,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 32)]
   [DebuggerDisplay("({m_x}, {m_y}, {m_z}, [{m_w}])")]
   [Serializable]
-  public struct Point4d : ISerializable, IEquatable<Point4d>
+  public struct Point4d : ISerializable, IEquatable<Point4d>, IEpsilonComparable<Point4d>
   {
     internal double m_x;
     internal double m_y;
@@ -2231,6 +2281,20 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Point4d other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon) &&
+             RhinoMath.EpsilonEquals(m_z, other.m_z, epsilon) &&
+             RhinoMath.EpsilonEquals(m_w, other.m_w, epsilon);
+    }
+
+    /// <summary>
     /// Computes the hash code for the present point.
     /// </summary>
     /// <returns>A non-unique hash code, which uses all coordiantes of this object.</returns>
@@ -2261,7 +2325,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 16)]
   [DebuggerDisplay("({m_x}, {m_y})")]
   [Serializable]
-  public struct Vector2d : ISerializable, IEquatable<Vector2d>, IComparable<Vector2d>, IComparable
+  public struct Vector2d : ISerializable, IEquatable<Vector2d>, IComparable<Vector2d>, IComparable, IEpsilonComparable<Vector2d>
   {
     private double m_x;
     private double m_y;
@@ -2407,6 +2471,18 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Vector2d other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon);
+    }
+
+    /// <summary>
     /// Compares this <see cref="Vector2d" /> with another <see cref="Vector2d" />.
     /// <para>Components evaluation priority is first X, then Y.</para>
     /// </summary>
@@ -2474,6 +2550,31 @@ namespace Rhino.Geometry
     {
       get { return new Vector2d(RhinoMath.UnsetValue, RhinoMath.UnsetValue); }
     }
+
+    /// <summary>
+    /// Gets a value indicating whether this vector is valid. 
+    /// A valid vector must be formed of valid component values for x, y and z.
+    /// </summary>
+    public bool IsValid
+    {
+      get
+      {
+        return RhinoMath.IsValidDouble(m_x) &&
+               RhinoMath.IsValidDouble(m_y);
+      }
+    }
+
+    /// <summary>
+    /// Unitizes the vector in place. A unit vector has length 1 unit. 
+    /// <para>An invalid or zero length vector cannot be unitized.</para>
+    /// </summary>
+    /// <returns>true on success or false on failure.</returns>
+    public bool Unitize()
+    {
+      bool rc = IsValid && UnsafeNativeMethods.ON_2dVector_Unitize(ref this);
+      return rc;
+    }
+
   }
 
   /// <summary>
@@ -2483,7 +2584,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 24)]
   [DebuggerDisplay("({m_x}, {m_y}, {m_z})")]
   [Serializable]
-  public struct Vector3d : ISerializable, IEquatable<Vector3d>, IComparable<Vector3d>, IComparable
+  public struct Vector3d : ISerializable, IEquatable<Vector3d>, IComparable<Vector3d>, IComparable, IEpsilonComparable<Vector3d>
   {
     #region fields
     internal double m_x;
@@ -3140,6 +3241,19 @@ namespace Rhino.Geometry
     {
       return this == vector;
     }
+    
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Vector3d other, double epsilon)
+    {
+      return RhinoMath.EpsilonEquals(m_x, other.m_x, epsilon) &&
+             RhinoMath.EpsilonEquals(m_y, other.m_y, epsilon) &&
+             RhinoMath.EpsilonEquals(m_z, other.m_z, epsilon); 
+    }
 
     /// <summary>
     /// Compares this <see cref="Vector3d" /> with another <see cref="Vector3d" />.
@@ -3387,7 +3501,7 @@ namespace Rhino.Geometry
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 48)]
   [DebuggerDisplay("Pt({m_P.X},{m_P.Y},{m_P.Z}) Dir({m_V.X},{m_V.Y},{m_V.Z})")]
   [Serializable]
-  public struct Ray3d : ISerializable, IEquatable<Ray3d>
+  public struct Ray3d : ISerializable, IEquatable<Ray3d>, IEpsilonComparable<Ray3d>
   {
     readonly Point3d m_P;
     readonly Vector3d m_V;
@@ -3490,6 +3604,18 @@ namespace Rhino.Geometry
     public bool Equals(Ray3d ray)
     {
       return this == ray;
+    }
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Ray3d other, double epsilon)
+    {
+      return m_P.EpsilonEquals(other.m_P, epsilon) &&
+             m_V.EpsilonEquals(other.m_V, epsilon);
     }
 
     /// <summary>

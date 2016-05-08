@@ -1,6 +1,6 @@
 #pragma warning disable 1591
 using System;
-using System.Diagnostics;
+using Rhino.Runtime.InteropWrappers;
 
 #if RDK_CHECKED
 namespace Rhino.Render
@@ -12,14 +12,14 @@ namespace Rhino.Render
     /// </summary>
     /// <param name="material">(optional)The material to create the basic material from.</param>
     /// <returns>A new basic material.</returns>
-    public static RenderMaterial CreateBasicMaterial(Rhino.DocObjects.Material material)
+    public static RenderMaterial CreateBasicMaterial(DocObjects.Material material)
     {
-      IntPtr pConstSourceMaterial = (material == null ? IntPtr.Zero : material.ConstPointer());
-      IntPtr pNewMaterial = UnsafeNativeMethods.Rdk_Globals_NewBasicMaterial(pConstSourceMaterial);
-      NativeRenderMaterial newMaterial = RenderContent.FromPointer(pNewMaterial) as NativeRenderMaterial;
-      if (newMaterial != null)
-        newMaterial.AutoDelete = true;
-      return newMaterial;
+      IntPtr const_ptr_source_material = (material == null ? IntPtr.Zero : material.ConstPointer());
+      IntPtr ptr_new_material = UnsafeNativeMethods.Rdk_Globals_NewBasicMaterial(const_ptr_source_material);
+      NativeRenderMaterial new_material = FromPointer(ptr_new_material) as NativeRenderMaterial;
+      if (new_material != null)
+        new_material.AutoDelete = true;
+      return new_material;
     }
 
     /// <summary>
@@ -30,19 +30,19 @@ namespace Rhino.Render
       /// <summary>
       /// Corresponds to ON_Texture::bitmap_texture.
       /// </summary>
-      Diffuse = 0,
+      Diffuse = 100,
       /// <summary>
       /// Corresponds to ON_Texture::transparancy_texture.
       /// </summary>
-      Transparency = 1,
+      Transparency = 101,
       /// <summary>
       /// Corresponds to ON_Texture::bump_texture.
       /// </summary>
-      Bump = 2,
+      Bump = 102,
       /// <summary>
       /// Corresponds to ON_Texture::emap_texture.
       /// </summary>
-      Environment = 3,
+      Environment = 103,
     }
 
     /// <summary>
@@ -93,7 +93,7 @@ namespace Rhino.Render
         return GetString(iString);
       }
 
-      using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.Rdk_RenderMaterial_CallTextureChildSlotNameBase(ConstPointer(), pString, (int)slot);
@@ -173,8 +173,141 @@ namespace Rhino.Render
         Rhino.Runtime.HostUtils.ExceptionReport(ex);
       }
     }
-
     #endregion
+
+
+    #region Public properties
+
+    /// <summary>
+    /// Geometry that appears in preview panes
+    /// </summary>
+    public enum PreviewGeometryType
+    {
+      Cone = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Cone,
+      Cube = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Cuboid,
+      //Mesh = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Mesh,
+      Plane = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Plane,
+      Pyramid = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Pyramid,
+      Sphere = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Sphere,
+      Torus = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Torus,
+      //SelectedObjects = UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.SelectedObjects
+    }
+
+    /// <summary>
+    /// Set or get the default geometry that appears in preview panes
+    /// </summary>
+    public PreviewGeometryType DefaultPreviewGeometryType
+    {
+      get
+      {
+        var pointer = ConstPointer();
+        var value = UnsafeNativeMethods.Rdk_RenderMaterial_GetDefaultPreviewGeometry(pointer);
+        switch (value)
+        {
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Cone:
+            return PreviewGeometryType.Cone;
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Cuboid:
+            return PreviewGeometryType.Cube;
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Pyramid:
+            return PreviewGeometryType.Pyramid;
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Plane:
+            return PreviewGeometryType.Plane;
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Torus:
+            return PreviewGeometryType.Torus;
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Mesh:
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.Sphere:
+          case UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry.SelectedObjects:
+            return PreviewGeometryType.Sphere;
+        }
+        throw new Exception("Unknown RhRdkPreviewSceneServerGeometry value");
+      }
+      set
+      {
+        switch (value)
+        {
+          case PreviewGeometryType.Cone:
+          case PreviewGeometryType.Cube:
+          case PreviewGeometryType.Pyramid:
+          case PreviewGeometryType.Plane:
+          case PreviewGeometryType.Sphere:
+          case PreviewGeometryType.Torus:
+            break;
+          default:
+            throw new Exception("Unhandled PreviewGeometryType");
+        }
+        var pointer = NonConstPointer();
+        UnsafeNativeMethods.Rdk_RenderMaterial_SetDefaultPreviewGeometry(pointer, (UnsafeNativeMethods.RhRdkPreviewSceneServerGeometry) value);
+      }
+    }
+
+    /// <summary>
+    /// The default scene background for the image that appears in
+    /// preview panes
+    /// </summary>
+    public enum PreviewBackgroundType
+    {
+      None = UnsafeNativeMethods.RhCmnMaterialPreviewBackground.None,
+      Checkered = UnsafeNativeMethods.RhCmnMaterialPreviewBackground.Checkered,
+      //Unused = UnsafeNativeMethods.RhCmnMaterialPreviewBackground.Unused,
+      //Custom = UnsafeNativeMethods.RhCmnMaterialPreviewBackground.Custom,
+    };
+
+    /// <summary>
+    /// Set or get the default scene background for the image that appears in
+    /// preview panes
+    /// </summary>
+    public PreviewBackgroundType DefaultPreviewBackgroundType
+    {
+      get
+      {
+        var pointer = ConstPointer();
+        var value = UnsafeNativeMethods.Rdk_RenderMaterial_GetDefaultPreviewBackground(pointer);
+        switch (value)
+        {
+          case UnsafeNativeMethods.RhCmnMaterialPreviewBackground.Checkered:
+            return PreviewBackgroundType.Checkered;
+          case UnsafeNativeMethods.RhCmnMaterialPreviewBackground.None:
+          case UnsafeNativeMethods.RhCmnMaterialPreviewBackground.Unused:
+          case UnsafeNativeMethods.RhCmnMaterialPreviewBackground.Custom:
+            return PreviewBackgroundType.None;
+        }
+        throw new Exception("Unknown RhCmnMaterialPreviewBackground value");
+      }
+      set
+      {
+        switch (value)
+        {
+          case PreviewBackgroundType.Checkered:
+          case PreviewBackgroundType.None:
+            break;
+          default:
+            throw new Exception("Unhandled PreviewBackgroundType");
+        }
+        var pointer = NonConstPointer();
+        UnsafeNativeMethods.Rdk_RenderMaterial_SetDefaultPreviewBackground(pointer, (UnsafeNativeMethods.RhCmnMaterialPreviewBackground)value);
+      }
+    }
+
+    /// <summary>
+    /// The default preview geometry size
+    /// </summary>
+    public double DefaultPreviewSize
+    {
+      get
+      {
+        var pointer = ConstPointer();
+        var value = UnsafeNativeMethods.Rdk_RenderMaterial_GetDefaultPreviewSize(pointer);
+        return value;
+      }
+      set
+      {
+        if (value < 0.0) throw new Exception("DefaultPreviewSize must be greater than 0.0");
+        var pointer = NonConstPointer();
+        UnsafeNativeMethods.Rdk_RenderMaterial_SetDefaultPreviewSize(pointer, value);
+      }
+    }
+
+    #endregion Public properties
   }
 
   #region Native wrapper

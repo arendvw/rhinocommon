@@ -134,6 +134,7 @@ namespace Rhino.Display
     const int idxDrawOverlay = 4;
     const int idxCalcBoundingBoxZoomExtents = 5;
     const int idxDrawObject = 6;
+    const int idxObjectCulling = 7;
 
     static void ConduitReport(int which)
     {
@@ -160,7 +161,11 @@ namespace Rhino.Display
         case idxDrawObject:
           title = "DrawObject";
           cb = m_drawobject;
-          break;            
+          break;
+        case idxObjectCulling:
+          title = "ObjectCulling";
+          cb = m_objectCulling;
+          break;
       }
       if (!string.IsNullOrEmpty(title) && cb != null)
       {
@@ -183,6 +188,7 @@ namespace Rhino.Display
 
     // Callback used by C++ conduit to call into .NET
     internal delegate void ConduitCallback(IntPtr pPipeline, IntPtr pConduit);
+    private static ConduitCallback m_ObjectCullingCallback;
     private static ConduitCallback m_CalcBoundingBoxCallback;
     private static ConduitCallback m_CalcBoundingBoxZoomExtentsCallback;
     private static ConduitCallback m_PreDrawObjectsCallback;
@@ -191,6 +197,7 @@ namespace Rhino.Display
     private static ConduitCallback m_DrawForegroundCallback;
     private static ConduitCallback m_DrawOverlayCallback;
 
+    private static EventHandler<CullObjectEventArgs> m_objectCulling;
     private static EventHandler<CalculateBoundingBoxEventArgs> m_calcbbox;
     private static EventHandler<CalculateBoundingBoxEventArgs> m_calcbbox_zoomextents;
     private static EventHandler<DrawEventArgs> m_predrawobjects;
@@ -198,6 +205,21 @@ namespace Rhino.Display
     private static EventHandler<DrawEventArgs> m_postdrawobjects;
     private static EventHandler<DrawEventArgs> m_drawforeground;
     private static EventHandler<DrawEventArgs> m_drawoverlay;
+
+    private static void OnObjectCulling(IntPtr pPipeline, IntPtr pConduit)
+    {
+      if (m_objectCulling != null)
+      {
+        try
+        {
+          m_objectCulling(null, new CullObjectEventArgs(pPipeline, pConduit));
+        }
+        catch (Exception ex)
+        {
+          Runtime.HostUtils.ExceptionReport(ex);
+        }
+      }
+    }
 
     private static void OnCalcBoundingBox(IntPtr pPipeline, IntPtr pConduit)
     {
@@ -298,6 +320,35 @@ namespace Rhino.Display
         }
       }
     }
+
+
+    public static event EventHandler<CullObjectEventArgs> ObjectCulling
+    {
+      add
+      {
+        if (Runtime.HostUtils.ContainsDelegate(m_objectCulling, value))
+          return;
+
+        if (null == m_objectCulling)
+        {
+          m_ObjectCullingCallback = OnObjectCulling;
+          UnsafeNativeMethods.CRhinoDisplayConduit_SetCallback(idxObjectCulling, m_ObjectCullingCallback, m_report);
+        }
+
+        m_objectCulling -= value;
+        m_objectCulling += value;
+      }
+      remove
+      {
+        m_objectCulling -= value;
+        if (m_objectCulling == null)
+        {
+          UnsafeNativeMethods.CRhinoDisplayConduit_SetCallback(idxObjectCulling, null, m_report);
+          m_ObjectCullingCallback = null;
+        }
+      }
+    }
+
 
     public static event EventHandler<CalculateBoundingBoxEventArgs> CalculateBoundingBox
     {
@@ -655,9 +706,13 @@ namespace Rhino.Display
       get { return UnsafeNativeMethods.CRhinoDisplayPipeline_GetInt(m_ptr, idxNestLevel); }
     }
 
-    //David: When are these 3 properties useful?
     /// <summary>
-    /// Gets a value that indicates whether the pipeline is currently in a curve drawing operation.
+    /// Gets a value that indicates whether the pipeline is currently in a curve
+    /// drawing operation. This is useful when inside of a draw event or display
+    /// conduit to check and see if the geometry is about to be drawn is going to
+    /// be drawing the wire representation of the geometry (mesh, extrusion, or
+    /// brep).  See DrawingSurfaces to check and see if the shaded mesh representation
+    /// of the geometry is going to be drawn.
     /// </summary>
     public bool DrawingWires
     {
@@ -671,7 +726,13 @@ namespace Rhino.Display
       get { return UnsafeNativeMethods.CRhinoDisplayPipeline_GetBool(m_ptr, idxDrawingGrips); }
     }
     /// <summary>
-    /// Gets a value that indicates whether the pipeline is currently in a surface drawing operation.
+    /// Gets a value that indicates whether the pipeline is currently in a surface
+    /// drawing operation.  Surface drawing means draw the shaded triangles of a mesh
+    /// representing the surface (mesh, extrusion, or brep).  This is useful when
+    /// inside of a draw event or display conduit to check and see if the geometry is
+    /// about to be drawn as a shaded set of triangles representing the geometry.
+    /// See DrawingWires to check and see if the wireframe representation of the
+    /// geometry is going to be drawn.
     /// </summary>
     public bool DrawingSurfaces
     {
@@ -705,6 +766,19 @@ namespace Rhino.Display
         return m_viewport;
       }
     }
+
+    DisplayPipelineAttributes m_display_attrs;
+    public DisplayPipelineAttributes DisplayPipelineAttributes
+    {
+      get { return m_display_attrs ?? (m_display_attrs = new DisplayPipelineAttributes(this)); }
+    }
+
+    internal IntPtr DisplayAttributeConstPointer()
+    {
+      IntPtr pConstThis = NonConstPointer(); // There is no const version of display pipeline accessible in RhinoCommon
+      return UnsafeNativeMethods.CRhinoDisplayPipeline_DisplayAttrs(pConstThis);
+    }
+
     #endregion
 
     #region pipeline settings
@@ -989,6 +1063,11 @@ namespace Rhino.Display
     /// </summary>
     /// <param name="mesh">Mesh for wire drawing.</param>
     /// <param name="color">Color of mesh wires.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_meshdrawing.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_meshdrawing.cs' lang='cs'/>
+    /// <code source='examples\py\ex_meshdrawing.py' lang='py'/>
+    /// </example>
     public void DrawMeshWires(Mesh mesh, System.Drawing.Color color)
     {
       DrawMeshWires(mesh, color, 1);
@@ -1025,6 +1104,11 @@ namespace Rhino.Display
     /// </summary>
     /// <param name="mesh">Mesh to draw.</param>
     /// <param name="material">Material to draw faces with.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_meshdrawing.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_meshdrawing.cs' lang='cs'/>
+    /// <code source='examples\py\ex_meshdrawing.py' lang='py'/>
+    /// </example>
     public void DrawMeshShaded(Mesh mesh, DisplayMaterial material)
     {
       IntPtr pMesh = mesh.ConstPointer();
@@ -1182,6 +1266,11 @@ namespace Rhino.Display
     /// <param name="color">Color of arrow.</param>
     /// <param name="screenSize">If screenSize != 0.0 then the size (in screen pixels) of the arrow head will be equal to screenSize.</param>
     /// <param name="relativeSize">If relativeSize != 0.0 and screensize == 0.0 the size of the arrow head will be proportional to the arrow shaft length.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_conduitarrowheads.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_conduitarrowheads.cs' lang='cs'/>
+    /// <code source='examples\py\ex_conduitarrowheads.py' lang='py'/>
+    /// </example>
     public void DrawArrow(Line line, System.Drawing.Color color, double screenSize, double relativeSize)
     {
       Line[] lines = new Line[] { line };
@@ -1437,6 +1526,32 @@ namespace Rhino.Display
       UnsafeNativeMethods.CRhinoDisplayPipeLine_DrawPolygon(m_ptr, count, ptArray, argb, filled);
     }
 
+
+    /// <summary>
+    /// Draws a bitmap in screen coordinates
+    /// </summary>
+    /// <param name="bitmap">bitmap to draw</param>
+    /// <param name="left">where top/left corner of bitmap should appear in screen coordinates</param>
+    /// <param name="top">where top/left corner of bitmap should appear in screen coordinates</param>
+    public void DrawBitmap(DisplayBitmap bitmap, int left, int top)
+    {
+      DrawBitmap(bitmap, left, top, System.Drawing.Color.Empty);
+    }
+
+    /// <summary>
+    /// Draws a bitmap in screen coordinates
+    /// </summary>
+    /// <param name="bitmap">bitmap to draw</param>
+    /// <param name="left">where top/left corner of bitmap should appear in screen coordinates</param>
+    /// <param name="top">where top/left corner of bitmap should appear in screen coordinates</param>
+    /// <param name="maskColor">mask color to apply to bitmap for transparent regions</param>
+    public void DrawBitmap(DisplayBitmap bitmap, int left, int top, System.Drawing.Color maskColor)
+    {
+      IntPtr ptr_bitmap = bitmap.NonConstPointer();
+      int argb = maskColor.ToArgb();
+      UnsafeNativeMethods.CRhinoDisplayPipeline_DrawBitmap3(m_ptr, ptr_bitmap, left, top, argb);
+    }
+
     /// <summary>
     /// Draws a text dot in screen coordinates.
     /// </summary>
@@ -1447,10 +1562,10 @@ namespace Rhino.Display
     /// <param name="textColor">Dot foreground color.</param>
     public void DrawDot(int screenX, int screenY, string text, System.Drawing.Color dotColor, System.Drawing.Color textColor)
     {
-      int argbDot = dotColor.ToArgb();
-      int argbText = textColor.ToArgb();
-      IntPtr pThis = NonConstPointer();
-      UnsafeNativeMethods.CRhinoDisplayPipeline_DrawDot3(pThis, screenX, screenY, text, argbDot, argbText);
+      int argb_dot = dotColor.ToArgb();
+      int argb_text = textColor.ToArgb();
+      IntPtr ptr_this = NonConstPointer();
+      UnsafeNativeMethods.CRhinoDisplayPipeline_DrawDot3(ptr_this, screenX, screenY, text, argb_dot, argb_text);
     }
     /// <summary>
     /// Draws a text dot in screen coordinates.
@@ -1460,8 +1575,8 @@ namespace Rhino.Display
     /// <param name="text">Text content of dot.</param>
     public void DrawDot(int screenX, int screenY, string text)
     {
-      IntPtr pThis = NonConstPointer();
-      UnsafeNativeMethods.CRhinoDisplayPipeline_DrawDot4(pThis, screenX, screenY, text);
+      IntPtr ptr_this = NonConstPointer();
+      UnsafeNativeMethods.CRhinoDisplayPipeline_DrawDot4(ptr_this, screenX, screenY, text);
     }
     /// <summary>
     /// Draw a text dot in world coordinates.
@@ -1800,6 +1915,11 @@ namespace Rhino.Display
     /// <param name="color">text color.</param>
     /// <param name="screenCoordinate">definition point in screen coordinates (0,0 is top-left corner)</param>
     /// <param name="middleJustified">if true text is centered around the definition point, otherwise it is lower-left justified.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_drawstring.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_drawstring.cs' lang='cs'/>
+    /// <code source='examples\py\ex_drawstring.py' lang='py'/>
+    /// </example>
     public void Draw2dText(string text, System.Drawing.Color color, Point2d screenCoordinate, bool middleJustified)
     {
       IntPtr pThis = NonConstPointer();
@@ -1916,29 +2036,26 @@ namespace Rhino.Display
       UnsafeNativeMethods.CRhinoDisplayPipeline_Draw3dText4(pThis, pAnnotationText, text.FontFace, color.ToArgb(), text.Bold, text.Italic, textPlaneOrigin);
     }
 
-    /*
-
     /// <summary>
-    /// Determines screen rectangle that would be drawn to using the DrawString(..) function
+    /// Determines screen rectangle that would be drawn to using the Draw2dText(..) function
     /// with the same parameters.
     /// </summary>
-    /// <param name="measuredRectangle">rectangle in the viewport's screen coordinates on success.</param>
     /// <param name="text">text to measure.</param>
     /// <param name="definitionPoint">either lower-left or middle of text.</param>
     /// <param name="middleJustified">true=middle justified. false=lower-left justified.</param>
-    /// <param name="rotation">text rotation in 1/10 degrees.</param>
+    /// <param name="rotationRadians">text rotation in radians</param>
     /// <param name="height">height in pixels (good default is 12)</param>
-    /// <param name="fontface">font name (good default is "Arial")</param>
-    /// <returns>true on success, false on failure.</returns>
-    public bool MeasureString( out System.Drawing.Rectangle measuredRectangle, string text, ON_2dPoint definitionPoint, bool middleJustified, int rotation, int height, string fontFace )
+    /// <param name="fontFace">font name (good default is "Arial")</param>
+    /// <returns>rectangle in the viewport's screen coordinates on success.</returns>
+    public System.Drawing.Rectangle Measure2dText( string text, Point2d definitionPoint, bool middleJustified, double rotationRadians, int height, string fontFace )
     {
+      int left=0, top=0, right=0, bottom=0;
+      if( UnsafeNativeMethods.CRhinoDisplayPipeline_MeasureString(m_ptr, ref left, ref top, ref right, ref bottom, text, definitionPoint, middleJustified, rotationRadians, height, fontFace) )
+      {
+        return System.Drawing.Rectangle.FromLTRB(left, top, right, bottom);
+      }
+      return System.Drawing.Rectangle.Empty;
     }
-
-    public void DrawTriangle( ON_3dPoint p0, ON_3dPoint p1, ON_3dPoint p2, System.Drawing.Color color )
-    {
-    }
-
-    */
 
     public void DrawObject(DocObjects.RhinoObject rhinoObject)
     {
@@ -2009,6 +2126,11 @@ namespace Rhino.Display
     /// </summary>
     /// <param name="circle">Circle to draw.</param>
     /// <param name="color">Color to draw with.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_getpointdynamicdraw.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_getpointdynamicdraw.cs' lang='cs'/>
+    /// <code source='examples\py\ex_getpointdynamicdraw.py' lang='py'/>
+    /// </example>
     public void DrawCircle(Circle circle, System.Drawing.Color color)
     {
       int argb = color.ToArgb();
@@ -2215,20 +2337,20 @@ namespace Rhino.Display
       UnsafeNativeMethods.CRhinoDisplayPipeline_DrawBitmaps(m_ptr, pBitmap, items.m_points.Length, items.m_points, items.m_colors_argb.Length, items.m_colors_argb, indices, size, translation, sizeInWorldSpace);
     }
 
-    public void DrawParticles(Rhino.Geometry.ParticleSystem particles)
+    public void DrawParticles(ParticleSystem particles)
     {
       particles.UpdateDrawCache();
       UnsafeNativeMethods.CRhinoDisplayPipeline_DrawParticles1(m_ptr, IntPtr.Zero, particles.m_points.Length, particles.m_points, particles.m_sizes, particles.m_colors_argb, particles.DisplaySizesInWorldUnits);
     }
 
-    public void DrawParticles(Rhino.Geometry.ParticleSystem particles, DisplayBitmap bitmap)
+    public void DrawParticles(ParticleSystem particles, DisplayBitmap bitmap)
     {
       particles.UpdateDrawCache();
       IntPtr pBitmap = bitmap.NonConstPointer();
       UnsafeNativeMethods.CRhinoDisplayPipeline_DrawParticles1(m_ptr, pBitmap, particles.m_points.Length, particles.m_points, particles.m_sizes, particles.m_colors_argb, particles.DisplaySizesInWorldUnits);
     }
 
-    public void DrawParticles(Rhino.Geometry.ParticleSystem particles, DisplayBitmap[] bitmaps)
+    public void DrawParticles(ParticleSystem particles, DisplayBitmap[] bitmaps)
     {
       particles.UpdateDrawCache();
       uint[] ids = new uint[bitmaps.Length];
@@ -2238,17 +2360,13 @@ namespace Rhino.Display
       UnsafeNativeMethods.CRhinoDisplayPipeline_DrawParticles2(m_ptr, ids.Length, ids, particles.m_points.Length, particles.m_points, particles.m_sizes, particles.m_colors_argb, particles.m_display_bitmap_ids, particles.DisplaySizesInWorldUnits);
     }
 
-    /*
-    //public void Draw2dRectangle( System.Drawing.Rectangle rectangle, HPEN pen, bool=true);
-    //public void Draw2dLine(const CPoint&, const CPoint&, HPEN, bool=true);
-  
-    public void FillSolidRect( System.Drawing.Rectangle screenRectangle, System.Drawing.Color color, int transparency)
+    public void Draw2dRectangle(System.Drawing.Rectangle rectangle, System.Drawing.Color strokeColor, int thickness, System.Drawing.Color fillColor)
     {
+      UnsafeNativeMethods.CRhinoDisplayPipeline_Draw2dRectangle(m_ptr, rectangle.Left, rectangle.Top, rectangle.Width, rectangle.Height, strokeColor.ToArgb(), thickness, fillColor.ToArgb());
     }
-    */
   }
 
-  public class DrawEventArgs : System.EventArgs
+  public class DrawEventArgs : EventArgs
   {
     internal IntPtr m_pDisplayPipeline;
     internal readonly IntPtr m_pDisplayConduit;
@@ -2327,6 +2445,35 @@ namespace Rhino.Display
     }
   }
 
+  public class CullObjectEventArgs : DrawEventArgs
+  {
+    internal CullObjectEventArgs(IntPtr pDisplayPipeline, IntPtr pDisplayConduit)
+      : base(pDisplayPipeline, pDisplayConduit)
+    {
+    }
+
+    Rhino.DocObjects.RhinoObject m_rhino_object;
+    public Rhino.DocObjects.RhinoObject RhinoObject
+    {
+      get
+      {
+        if (m_rhino_object == null)
+        {
+          IntPtr pRhinoObject = UnsafeNativeMethods.CChannelAttributes_RhinoObject(m_pDisplayConduit);
+          m_rhino_object = Rhino.DocObjects.RhinoObject.CreateRhinoObjectHelper(pRhinoObject);
+        }
+        return m_rhino_object;
+      }
+    }
+
+    public bool CullObject
+    {
+      get { return !GetChannelAttributeBool(idxDrawObject); }
+      set { SetChannelAttributeBool(idxDrawObject, !value); }
+    }
+  }
+
+
   public class DrawObjectEventArgs : DrawEventArgs
   {
     internal DrawObjectEventArgs(IntPtr pDisplayPipeline, IntPtr pDisplayConduit)
@@ -2383,6 +2530,130 @@ namespace Rhino.Display
       m_bbox.Union(box);
       UnsafeNativeMethods.CChannelAttr_GetSetBBox(m_pDisplayConduit, true, ref m_bbox);
     }
+  }
+
+  /// <summary>
+  /// Provides functionality for getting the zbuffer values from a viewport
+  /// and a given display mode
+  /// </summary>
+  public class ZBufferCapture : IDisposable
+  {
+    IntPtr m_ptr; //CRhinoZBuffer*
+    public ZBufferCapture(RhinoViewport viewport)
+    {
+      IntPtr pViewport = IntPtr.Zero;
+      if( viewport!=null )
+        pViewport = viewport.ConstPointer();
+      m_ptr = UnsafeNativeMethods.CRhinoZBuffer_New(pViewport);
+    }
+
+    /// <summary>
+    /// Passively reclaims unmanaged resources when the class user did not explicitly call Dispose().
+    /// </summary>
+    ~ZBufferCapture() { Dispose(false); }
+
+    /// <summary>
+    /// Actively reclaims unmanaged resources that this instance uses.
+    /// </summary>
+    public void Dispose()
+    {
+      Dispose(true);
+      GC.SuppressFinalize(this);
+    }
+
+    /// <summary>
+    /// For derived class implementers.
+    /// <para>This method is called with argument true when class user calls Dispose(), while with argument false when
+    /// the Garbage Collector invokes the finalizer, or Finalize() method.</para>
+    /// <para>You must reclaim all used unmanaged resources in both cases, and can use this chance to call Dispose on disposable fields if the argument is true.</para>
+    /// <para>Also, you must call the base virtual method within your overriding method.</para>
+    /// </summary>
+    /// <param name="disposing">true if the call comes from the Dispose() method; false if it comes from the Garbage Collector finalizer.</param>
+    protected virtual void Dispose(bool disposing)
+    {
+      if (IntPtr.Zero != m_ptr)
+      {
+        UnsafeNativeMethods.CRhinoZBuffer_Delete(m_ptr);
+      }
+      m_ptr = IntPtr.Zero;
+    }
+
+    IntPtr NonConstPointer(bool destroyCache)
+    {
+      if (destroyCache && m_bitmap != null)
+        m_bitmap = null;
+
+      return m_ptr;
+    }
+
+    public void SetDisplayMode(Guid modeId)
+    {
+      IntPtr pThis = NonConstPointer(true);
+      UnsafeNativeMethods.CRhinoZBuffer_SetDisplayMode(pThis, modeId);
+    }
+
+    void SetBool(int which, bool on)
+    {
+      IntPtr pThis = NonConstPointer(true);
+      UnsafeNativeMethods.CRhinoZBuffer_SetBool(pThis, which, on);
+    }
+
+    const int IDX_SHOW_ISOCURVES = 0;
+    const int IDX_SHOW_MESH_WIRES = 1;
+    const int IDX_SHOW_CURVES = 2;
+    const int IDX_SHOW_POINTS = 3;
+    const int IDX_SHOW_TEXT = 4;
+    const int IDX_SHOW_ANNOTATIONS = 5;
+    const int IDX_SHOW_LIGHTS = 6;
+
+    public void ShowIsocurves(bool on) { SetBool(IDX_SHOW_ISOCURVES, on); }
+    public void ShowMeshWires(bool on) { SetBool(IDX_SHOW_MESH_WIRES, on); }
+    public void ShowCurves(bool on) { SetBool(IDX_SHOW_CURVES, on); }
+    public void ShowPoints(bool on) { SetBool(IDX_SHOW_POINTS, on); }
+    public void ShowText(bool on) { SetBool(IDX_SHOW_TEXT, on); }
+    public void ShowAnnotations(bool on) { SetBool(IDX_SHOW_ANNOTATIONS, on); }
+    public void ShowLights(bool on) { SetBool(IDX_SHOW_LIGHTS, on); }
+
+    public int HitCount()
+    {
+      IntPtr pThis = NonConstPointer(false);
+      return UnsafeNativeMethods.CRhinoZBuffer_HitCount(pThis);
+    }
+    public float MaxZ()
+    {
+      IntPtr pThis = NonConstPointer(false);
+      return UnsafeNativeMethods.CRhinoZBuffer_MaxZ(pThis);
+    }
+    public float MinZ()
+    {
+      IntPtr pThis = NonConstPointer(false);
+      return UnsafeNativeMethods.CRhinoZBuffer_MinZ(pThis);
+    }
+    public float ZValueAt(int x, int y)
+    {
+      IntPtr pThis = NonConstPointer(false);
+      return UnsafeNativeMethods.CRhinoZBuffer_ZValue(pThis, x, y);
+    }
+    public Point3d WorldPointAt(int x, int y)
+    {
+      IntPtr pThis = NonConstPointer(false);
+      Point3d rc = new Point3d();
+      UnsafeNativeMethods.CRhinoZBuffer_WorldPoint(pThis, x, y, ref rc);
+      return rc;
+    }
+
+    System.Drawing.Bitmap m_bitmap;
+    public System.Drawing.Bitmap GrayscaleDib()
+    {
+      if (m_bitmap == null)
+      {
+        IntPtr pThis = NonConstPointer(false);
+        IntPtr hBitmap = UnsafeNativeMethods.CRhinoZBuffer_GrayscaleDib(pThis);
+        m_bitmap = System.Drawing.Image.FromHbitmap(hBitmap);
+      }
+      return m_bitmap;
+    }
+
   }
 }
 #endif

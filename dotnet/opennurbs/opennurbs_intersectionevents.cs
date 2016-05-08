@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 namespace Rhino.Geometry.Intersect
 {
+#if RHINO_SDK
   /// <summary>
   /// Provides all the information for a single Curve Intersection event.
   /// </summary>
@@ -39,6 +40,11 @@ namespace Rhino.Geometry.Intersect
     /// <summary>
     /// All curve intersection events are either a single point or an overlap.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_curvesurfaceintersect.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_curvesurfaceintersect.cs' lang='cs'/>
+    /// <code source='examples\py\ex_curvesurfaceintersect.py' lang='py'/>
+    /// </example>
     public bool IsOverlap
     {
       get { return !IsPoint; }
@@ -440,4 +446,5 @@ namespace Rhino.Geometry.Intersect
     }
     #endregion
   }
+#endif
 }

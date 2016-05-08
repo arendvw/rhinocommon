@@ -1,32 +1,93 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using Rhino.Runtime.InteropWrappers;
 
-namespace Rhino.Geometry
+namespace Rhino.Runtime.InteropWrappers
 {
+  /// <summary>
+  /// This is only needed when passing values to the Rhino C++ core, ignore
+  /// for .NET plug-ins.
+  /// </summary>
+  [CLSCompliant(false)]
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 88)]
-  struct MeshPointDataStruct
+  public struct MeshPointDataStruct
   {
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_et;
 
     //ON_COMPONENT_INDEX m_ci;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public uint m_ci_type;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public int m_ci_index;
 
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public int m_edge_index;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public int m_face_index;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public char m_Triangle;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_t0;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_t1;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_t2;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_t3;
 
     //ON_3dPoint m_P;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_Px;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_Py;
+    /// <summary>
+    /// This is only needed when passing values to the Rhino C++ core, ignore
+    /// for .NET plug-ins.
+    /// </summary>
     public double m_Pz;
   }
+}
 
+namespace Rhino.Geometry
+{
   /// <summary>
   /// Represents a point that is found on a mesh.
   /// </summary>
@@ -88,6 +149,7 @@ namespace Rhino.Geometry
 
     //bool IsValid( ON_TextLog* text_log ) const;
 
+#if RHINO_SDK
     /// <summary>
     /// Gets the mesh face indices of the triangle where the
     /// intersection is on the face takes into consideration
@@ -101,6 +163,7 @@ namespace Rhino.Geometry
       c = -1;
       return UnsafeNativeMethods.ON_MESHPOINT_GetTriangle(pConstMesh, ref m_data, ref a, ref b, ref b);
     }
+#endif
 
     /// <summary>
     /// Face triangle where the intersection takes place:
@@ -188,7 +251,7 @@ namespace Rhino.Geometry.Intersect
 
   //also add ON_RTree
 
-#if USING_V5_SDK // only available in V5
+#if RHINO_SDK
 
   /// <summary>
   /// Represents a particular instance of a clash or intersection between two meshes.

@@ -6,9 +6,326 @@ using System.Runtime.InteropServices;
 using System.Diagnostics;
 using Rhino.Collections;
 using System.Runtime.Serialization;
+using Rhino.Geometry;
+using Rhino.Runtime.InteropWrappers;
+using Rhino.Render;
 
 namespace Rhino.Render
 {
+  /// <summary>
+  /// Used for cached texture coordinates
+  /// </summary>
+  public class CachedTextureCoordinates : Runtime.CommonObject, IList<Point3d>
+  {
+    /// <summary>
+    /// Internal constructor used to wrap ON_TextureCoordinates* retrieved from
+    /// a Rhino mesh.
+    /// </summary>
+    /// <param name="pTextureCoordinates"></param>
+    internal CachedTextureCoordinates(IntPtr pTextureCoordinates)
+    {
+      ConstructNonConstObject(pTextureCoordinates);
+      DoNotDestructOnDispose();
+    }
+    /// <summary>
+    /// Call this method to get the cached texture coordinates from a Rhino
+    /// mesh.
+    /// </summary>
+    /// <param name="mesh">
+    /// Mesh to query for cached coordinates.
+    /// </param>
+    /// <param name="textureMappingId">
+    /// The texture mapping ID to look for.
+    /// </param>
+    /// <returns>
+    /// Returns the cached coordinates if found or null if not.
+    /// </returns>
+    internal static CachedTextureCoordinates GetCachedTextureCoordinates(Mesh mesh, Guid textureMappingId)
+    {
+      var tc_pointer = UnsafeNativeMethods.ON_Mesh_CachedTextureCoordinates(mesh.ConstPointer(), textureMappingId);
+      if (tc_pointer == IntPtr.Zero)
+        return null;
+      var tc = new CachedTextureCoordinates(tc_pointer);
+      return tc;
+    }
+    /// <summary>
+    /// Use this method to iterate the cached texture coordinate array.
+    /// </summary>
+    /// <param name="index">
+    /// Index for the vertex to fetch.
+    /// </param>
+    /// <param name="u">
+    /// Output parameter which will receive the U value.
+    /// </param>
+    /// <param name="v">
+    /// Output parameter which will receive the V value.
+    /// </param>
+    /// <param name="w">
+    /// Output parameter which will receive the W value, this is only
+    /// meaningful if <see cref="Dim"/> is 3.
+    /// </param>
+    /// <returns>
+    /// Returns true if index is valid; otherwise returns false.
+    /// </returns>
+    public bool TryGetAt(int index, out double u, out double v, out double w)
+    {
+      u = v = w = -1.0;
+      var success = UnsafeNativeMethods.ON_TextureCoordinates_GetTextureCoordinate(ConstPointer(), index, ref u, ref v, ref w);
+      return (success > 0);
+    }
+
+    /// <summary>
+    /// Coordinate dimension: 2 = UV, 3 = UVW
+    /// </summary>
+    public int Dim
+    {
+      get { return UnsafeNativeMethods.ON_TextureCoordinates_GetDimension(ConstPointer()); }
+    }
+    /// <summary>
+    /// The texture mapping Id.
+    /// </summary>
+    public Guid MappingId
+    {
+      get { return UnsafeNativeMethods.ON_TextureCoordinates_GetMappingId(ConstPointer()); }
+    }
+
+    internal override IntPtr _InternalGetConstPointer()
+    {
+      return IntPtr.Zero;
+    }
+
+    internal override IntPtr _InternalDuplicate(out bool applymempressure)
+    {
+      applymempressure = false;
+      var const_pointer = ConstPointer();
+      return UnsafeNativeMethods.ON_Object_Duplicate(const_pointer);
+    }
+
+    #region IList<Point3d> implementation
+    /// <summary>
+    /// IList implementation, this list is always read-only so calling this
+    /// will cause a NotSupportedException to be thrown.
+    /// </summary>
+    /// <param name="item"></param>
+    public void Add(Point3d item)
+    {
+      throw new NotSupportedException("The cached texture coordinate list is read-only");
+    }
+    /// <summary>
+    /// IList implementation, this list is always read-only so calling this
+    /// will cause a NotSupportedException to be thrown.
+    /// </summary>
+    public void Clear()
+    {
+      throw new NotSupportedException("The cached texture coordinate list is read-only");
+    }
+    /// <summary>
+    /// Determines whether this collection contains a specific value.
+    /// </summary>
+    /// <param name="item"></param>
+    /// <returns></returns>
+    public bool Contains(Point3d item)
+    {
+      var index = IndexOf(item);
+      return (index >= 0);
+    }
+    /// <summary>
+    /// Copies the elements of the this collection to an System.Array,
+    /// starting at a particular System.Array index.
+    /// </summary>
+    /// <param name="array">
+    /// The one-dimensional System.Array that is the destination of the
+    /// elements copied from this collection. The System.Array must have
+    /// zero-based indexing.
+    /// </param>
+    /// <param name="arrayIndex">
+    /// The zero-based index in array at which copying begins.
+    /// </param>
+    /// <exception cref="System.ArgumentNullException">
+    /// array is null
+    /// </exception>
+    /// <exception cref="System.ArgumentOutOfRangeException">
+    /// arrayIndex is less than 0.
+    /// </exception>
+    /// <exception cref="System.ArgumentException">
+    /// The number of elements in this collection is greater than the available
+    /// space from arrayIndex to the end of the destination array.
+    /// </exception>
+    public void CopyTo(Point3d[] array, int arrayIndex)
+    {
+      if (array == null) throw new ArgumentNullException("array");
+      if (arrayIndex < 0) throw new ArgumentOutOfRangeException("arrayIndex");
+      if ((arrayIndex + Count) >= array.Length) throw new ArgumentException("Array not big enough for the point list");
+      var count = Count;
+      for (int i = 0, j = arrayIndex; i < count; i++, j++)
+      {
+        double u, v, w;
+        TryGetAt(i, out u, out v, out w);
+        array[j].X = u;
+        array[j].Y = v;
+        array[j].Z = w;
+      }
+    }
+    /// <summary>
+    /// IList implementation, this list is always read-only so calling this
+    /// will cause a NotSupportedException to be thrown.
+    /// </summary>
+    public bool Remove(Point3d item)
+    {
+      throw new NotSupportedException("The cached texture coordinate list is read-only");
+    }
+    /// <summary>
+    /// Number of cached coordinates.
+    /// </summary>
+    public int Count
+    {
+      get { return UnsafeNativeMethods.ON_TextureCoordinates_GetPointListCount(ConstPointer()); }
+    }
+    /// <summary>
+    /// This collection is always read-only
+    /// </summary>
+    public bool IsReadOnly { get { return true; } }
+    /// <summary>
+    /// Returns an enumerator that iterates through this collection.
+    /// </summary>
+    /// <returns>
+    /// A enumerator that can be used to iterate through this collection.
+    /// </returns>
+    public IEnumerator<Point3d> GetEnumerator()
+    {
+      var const_pointer = ConstPointer();
+      return new CachedTextureCoordinatesEnumerator(const_pointer);
+    }
+    /// <summary>
+    /// Returns an enumerator that iterates through this collection.
+    /// </summary>
+    /// <returns>
+    /// A enumerator that can be used to iterate through this collection.
+    /// </returns>
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+      return GetEnumerator();
+    }
+    /// <summary>
+    /// Determines the index of a specific point in this collection.
+    /// </summary>
+    /// <param name="item">
+    /// The point (UV or UVW) to locate in this collection.
+    /// </param>
+    /// <returns>
+    /// The index of item if found in the list; otherwise, -1.
+    /// </returns>
+    public int IndexOf(Point3d item)
+    {
+      var count = Count;
+      for (var i = 0; i < count; i++)
+      {
+        double u, v, w;
+        var success = TryGetAt(i, out u, out v, out w);
+        if (success && u == item.X && v == item.Y && (Dim < 3 || w == item.Z))
+          return i;
+      }
+      return -1;
+    }
+    /// <summary>
+    /// IList implementation, this list is always read-only so calling this
+    /// will cause a NotSupportedException to be thrown.
+    /// </summary>
+    /// <param name="index"></param>
+    /// <param name="item"></param>
+    public void Insert(int index, Point3d item)
+    {
+      throw new NotSupportedException("The cached texture coordinate list is read-only");
+    }
+    /// <summary>
+    /// IList implementation, this list is always read-only so calling this
+    /// will cause a NotSupportedException to be thrown.
+    /// </summary>
+    /// <param name="index"></param>
+    public void RemoveAt(int index)
+    {
+      throw new NotSupportedException("The cached texture coordinate list is read-only");
+    }
+    /// <summary>
+    /// Gets the element at the specified index. Never call the set method, it
+    /// will always throw a NotSupportedException because this list is
+    /// read-only.
+    /// </summary>
+    /// <param name="index">
+    /// The zero-based index of the element to get.
+    /// </param>
+    /// <returns>
+    /// The element at the specified index.
+    /// </returns>
+    /// <exception cref="NotSupportedException">
+    /// IList implementation, this list is always read-only so calling the set
+    /// method will always cause a NotSupportedException to be thrown.
+    /// </exception>
+    public Point3d this[int index]
+    {
+      get
+      {
+        if (index < 0 || index >= Count) throw new ArgumentOutOfRangeException("index", "index is not a valid index in this list");
+        double u, v, w;
+        TryGetAt(index, out u, out v, out w);
+        return new Point3d(u, v, w);
+      }
+      set { throw new NotSupportedException("The cached texture coordinate list is read-only"); }
+    }
+    #endregion IList<Point3d> implementation
+  }
+
+  /// <summary>
+  /// Internal class used to enumerate a list of CachedTextureCoordinates
+  /// </summary>
+  class CachedTextureCoordinatesEnumerator : IEnumerator<Point3d>
+  {
+    internal CachedTextureCoordinatesEnumerator(IntPtr constPointer)
+    {
+      m_const_pointer = constPointer;
+      m_count = UnsafeNativeMethods.ON_TextureCoordinates_GetPointListCount(constPointer);
+    }
+
+    private readonly IntPtr m_const_pointer;
+    private readonly int m_count;
+    private int m_position = -1;
+
+    public void Dispose()
+    {
+    }
+
+    public bool MoveNext()
+    {
+      m_position++;
+      return (m_position < m_count);
+    }
+
+    public void Reset()
+    {
+      m_position = -1;
+    }
+
+    public Point3d Current
+    {
+      get
+      {
+        if (m_position < 0 || m_position >= m_count)
+          throw new InvalidOperationException();
+        var u = 0.0;
+        var v = 0.0;
+        var w = 0.0;
+        UnsafeNativeMethods.ON_TextureCoordinates_GetTextureCoordinate(m_const_pointer, m_position, ref u, ref v, ref w);
+        return new Point3d(u, v, w);
+      }
+    }
+
+    object IEnumerator.Current
+    {
+      get { return Current; }
+    }
+  }
+
+
   /// <summary>
   /// Holds texture mapping information.
   /// </summary>
@@ -128,14 +445,19 @@ namespace Rhino.Geometry
     {
       if (doc == null) throw new ArgumentNullException("doc");
 
-      IntPtr pMeshParameters = UnsafeNativeMethods.CRhinoDocProperties_RenderMeshSettings(doc.m_docId);
-      if (IntPtr.Zero == pMeshParameters)
+      IntPtr ptr_mesh_parameters = UnsafeNativeMethods.CRhinoDocProperties_RenderMeshSettings(doc.m_docId);
+      if (IntPtr.Zero == ptr_mesh_parameters)
         return null;
-      return new MeshingParameters(pMeshParameters);
+      return new MeshingParameters(ptr_mesh_parameters);
     }
 #endif
 
     /// <summary>Gets minimal meshing parameters.</summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_createmeshfrombrep.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_createmeshfrombrep.cs' lang='cs'/>
+    /// <code source='examples\py\ex_createmeshfrombrep.py' lang='py'/>
+    /// </example>
     public static MeshingParameters Minimal
     {
       get
@@ -168,8 +490,13 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
-    /// Gets default meshing parameters.
+    /// Get default meshing parameters.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_createmeshfrombrep.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_createmeshfrombrep.cs' lang='cs'/>
+    /// <code source='examples\py\ex_createmeshfrombrep.py' lang='py'/>
+    /// </example>
     public static MeshingParameters Default
     {
       get
@@ -206,6 +533,11 @@ namespace Rhino.Geometry
     /// Gets meshing parameters for coarse meshing. 
     /// <para>This corresponds with the "Jagged and Faster" default in Rhino.</para>
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_createmeshfrombrep.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_createmeshfrombrep.cs' lang='cs'/>
+    /// <code source='examples\py\ex_createmeshfrombrep.py' lang='py'/>
+    /// </example>
     public static MeshingParameters Coarse
     {
       get
@@ -229,6 +561,11 @@ namespace Rhino.Geometry
     /// Gets meshing parameters for smooth meshing. 
     /// <para>This corresponds with the "Smooth and Slower" default in Rhino.</para>
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_createmeshfrombrep.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_createmeshfrombrep.cs' lang='cs'/>
+    /// <code source='examples\py\ex_createmeshfrombrep.py' lang='py'/>
+    /// </example>
     public static MeshingParameters Smooth
     {
       get
@@ -435,6 +772,43 @@ namespace Rhino.Geometry
   }
 
   /// <summary>
+  /// Represents a portion of a mesh for partitioning
+  /// </summary>
+  public class MeshPart
+  {
+    private int m_vi0;
+    private int m_vi1;
+    private int m_fi0;
+    private int m_fi1;
+    private int m_vertex_count;
+    private int m_triangle_count;
+
+    internal MeshPart(int vertexStart, int vertexEnd, int faceStart, int faceEnd, int vertexCount, int triangleCount)
+    {
+      m_vi0 = vertexStart;
+      m_vi1 = vertexEnd;
+      m_fi0 = faceStart;
+      m_fi1 = faceEnd;
+      m_vertex_count = vertexCount;
+      m_triangle_count = triangleCount;
+    }
+
+    /// <summary>Start of subinterval of parent mesh vertex array</summary>
+    public int StartVertexIndex { get { return m_vi0; } }
+    /// <summary>End of subinterval of parent mesh vertex array</summary>
+    public int EndVertexIndex { get { return m_vi1; } }
+    /// <summary>Start of subinterval of parent mesh face array</summary>
+    public int StartFaceIndex { get { return m_fi0; } }
+    /// <summary>End of subinterval of parent mesh face array</summary>
+    public int EndFaceIndex { get { return m_fi1; } }
+
+    /// <summary>EndVertexIndex - StartVertexIndex</summary>
+    public int VertexCount { get { return m_vertex_count; } }
+    /// <summary></summary>
+    public int TriangleCount { get { return m_triangle_count; } }
+  }
+
+  /// <summary>
   /// Represents a geometry type that is defined by vertices and faces.
   /// <para>This is often called a face-vertex mesh.</para>
   /// </summary>
@@ -472,6 +846,77 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
+    /// Constructs new mesh that matches a bounding box.
+    /// </summary>
+    /// <param name="box">A box to use for creation.</param>
+    /// <param name="xCount">Number of faces in x-direction.</param>
+    /// <param name="yCount">Number of faces in y-direction.</param>
+    /// <param name="zCount">Number of faces in z-direction.</param>
+    /// <returns>A new brep, or null on failure.</returns>
+    public static Mesh CreateFromBox(BoundingBox box, int xCount, int yCount, int zCount)
+    {
+      IntPtr ptr = UnsafeNativeMethods.RHC_RhinoMeshBox2(box.Min, box.Max, xCount, yCount, zCount);
+      return IntPtr.Zero == ptr ? null : new Mesh(ptr, null);
+    }
+
+    /// <summary>
+    ///  Constructs new mesh that matches an aligned box.
+    /// </summary>
+    /// <param name="box">Box to match.</param>
+    /// <param name="xCount">Number of faces in x-direction.</param>
+    /// <param name="yCount">Number of faces in y-direction.</param>
+    /// <param name="zCount">Number of faces in z-direction.</param>
+    /// <returns></returns>
+    public static Mesh CreateFromBox(Box box, int xCount, int yCount, int zCount)
+    {
+      return CreateFromBox(box.GetCorners(), xCount, yCount, zCount);
+    }
+
+    /// <summary>
+    /// Constructs new mesh from 8 corner points.
+    /// </summary>
+    /// <param name="corners">
+    /// 8 points defining the box corners arranged as the vN labels indicate.
+    /// <pre>
+    /// <para>v7_____________v6</para>
+    /// <para>|\             |\</para>
+    /// <para>| \            | \</para>
+    /// <para>|  \ _____________\</para>
+    /// <para>|   v4         |   v5</para>
+    /// <para>|   |          |   |</para>
+    /// <para>|   |          |   |</para>
+    /// <para>v3--|----------v2  |</para>
+    /// <para> \  |           \  |</para>
+    /// <para>  \ |            \ |</para>
+    /// <para>   \|             \|</para>
+    /// <para>    v0_____________v1</para>
+    /// </pre>
+    /// </param>
+    /// <param name="xCount">Number of faces in x-direction.</param>
+    /// <param name="yCount">Number of faces in y-direction.</param>
+    /// <param name="zCount">Number of faces in z-direction.</param>
+    /// <returns>A new brep, or null on failure.</returns>
+    /// <returns>A new box mesh, on null on error.</returns>
+    public static Mesh CreateFromBox(IEnumerable<Point3d> corners, int xCount, int yCount, int zCount)
+    {
+      Point3d[] box_corners = new Point3d[8];
+      if (corners == null) { return null; }
+
+      int i = 0;
+      foreach (Point3d p in corners)
+      {
+        box_corners[i] = p;
+        i++;
+        if (8 == i) { break; }
+      }
+
+      if (i < 8) { return null; }
+
+      IntPtr ptr = UnsafeNativeMethods.RHC_RhinoMeshBox(box_corners, xCount, yCount, zCount);
+      return IntPtr.Zero == ptr ? null : new Mesh(ptr, null);
+    }
+
+    /// <summary>
     /// Constructs a mesh sphere.
     /// </summary>
     /// <param name="sphere">Base sphere for mesh.</param>
@@ -503,8 +948,8 @@ namespace Rhino.Geometry
     public static Mesh CreateFromCylinder(Cylinder cylinder, int vertical, int around)
     {
       if (!cylinder.IsValid) { throw new ArgumentException("cylinder is invalid"); }
-      IntPtr pMesh = UnsafeNativeMethods.RHC_RhinoMeshCylinder(ref cylinder, vertical, around);
-      return GeometryBase.CreateGeometryHelper(pMesh, null) as Mesh;
+      IntPtr ptr_mesh = UnsafeNativeMethods.RHC_RhinoMeshCylinder(ref cylinder, vertical, around);
+      return CreateGeometryHelper(ptr_mesh, null) as Mesh;
     }
 
     /// <summary>Constructs a mesh cone</summary>
@@ -516,8 +961,8 @@ namespace Rhino.Geometry
     public static Mesh CreateFromCone(Cone cone, int vertical, int around)
     {
       if (!cone.IsValid) { throw new ArgumentException("cone is invalid"); }
-      IntPtr pMesh = UnsafeNativeMethods.RHC_RhinoMeshCone(ref cone, vertical, around);
-      return GeometryBase.CreateGeometryHelper(pMesh, null) as Mesh;
+      IntPtr ptr_mesh = UnsafeNativeMethods.RHC_RhinoMeshCone(ref cone, vertical, around);
+      return CreateGeometryHelper(ptr_mesh, null) as Mesh;
     }
 
     /// <summary>
@@ -530,12 +975,10 @@ namespace Rhino.Geometry
     /// </returns>
     public static Mesh CreateFromPlanarBoundary(Curve boundary, MeshingParameters parameters)
     {
-      IntPtr pCurve = boundary.ConstPointer();
-      IntPtr pMeshParameters = parameters.ConstPointer();
-      IntPtr pMesh = UnsafeNativeMethods.RHC_RhinoMakePlanarMeshes(pCurve, pMeshParameters);
-      if (IntPtr.Zero == pMesh)
-        return null;
-      return new Mesh(pMesh, null);
+      IntPtr ptr_const_curve = boundary.ConstPointer();
+      IntPtr ptr_const_mesh_parameters = parameters.ConstPointer();
+      IntPtr ptr_mesh = UnsafeNativeMethods.RHC_RhinoMakePlanarMeshes(ptr_const_curve, ptr_const_mesh_parameters);
+      return CreateGeometryHelper(ptr_mesh, null) as Mesh;
     }
 
     /// <summary>
@@ -550,8 +993,8 @@ namespace Rhino.Geometry
       if (!polyline.IsClosed)
         return null;
       Mesh rc = new Mesh();
-      IntPtr pMesh = rc.NonConstPointer();
-      if (UnsafeNativeMethods.TLC_MeshPolyline(polyline.Count, polyline.ToArray(), pMesh))
+      IntPtr ptr_mesh = rc.NonConstPointer();
+      if (UnsafeNativeMethods.TLC_MeshPolyline(polyline.Count, polyline.ToArray(), ptr_mesh))
         return rc;
       return null;
     }
@@ -561,17 +1004,20 @@ namespace Rhino.Geometry
     /// </summary>
     /// <param name="brep">Brep to approximate.</param>
     /// <returns>An array of meshes.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_tightboundingbox.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_tightboundingbox.cs' lang='cs'/>
+    /// <code source='examples\py\ex_tightboundingbox.py' lang='py'/>
+    /// </example>
     public static Mesh[] CreateFromBrep(Brep brep)
     {
-      IntPtr pConstBrep = brep.ConstPointer();
-      Runtime.InteropWrappers.SimpleArrayMeshPointer meshes = new Rhino.Runtime.InteropWrappers.SimpleArrayMeshPointer();
-      IntPtr pMeshes = meshes.NonConstPointer();
-      int count = UnsafeNativeMethods.ON_Brep_CreateMesh(pConstBrep, pMeshes);
-      Mesh[] rc = null;
-      if (count > 0)
-        rc = meshes.ToNonConstArray();
-      meshes.Dispose();
-      return rc;
+      using (Runtime.InteropWrappers.SimpleArrayMeshPointer meshes = new Runtime.InteropWrappers.SimpleArrayMeshPointer())
+      {
+        IntPtr ptr_const_brep = brep.ConstPointer();
+        IntPtr ptr_mesh_array = meshes.NonConstPointer();
+        int count = UnsafeNativeMethods.ON_Brep_CreateMesh(ptr_const_brep, ptr_mesh_array);
+        return count < 1 ? null : meshes.ToNonConstArray();
+      }
     }
 
     /// <summary>
@@ -580,40 +1026,22 @@ namespace Rhino.Geometry
     /// <param name="brep">Brep to approximate.</param>
     /// <param name="meshingParameters">Parameters to use during meshing.</param>
     /// <returns>An array of meshes.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_createmeshfrombrep.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_createmeshfrombrep.cs' lang='cs'/>
+    /// <code source='examples\py\ex_createmeshfrombrep.py' lang='py'/>
+    /// </example>
     public static Mesh[] CreateFromBrep(Brep brep, MeshingParameters meshingParameters)
     {
-      IntPtr pConstBrep = brep.ConstPointer();
+      IntPtr ptr_const_brep = brep.ConstPointer();
       IntPtr pMeshParameters = meshingParameters.ConstPointer();
-      using (Runtime.InteropWrappers.SimpleArrayMeshPointer meshes = new Rhino.Runtime.InteropWrappers.SimpleArrayMeshPointer())
+      using (Runtime.InteropWrappers.SimpleArrayMeshPointer meshes = new Runtime.InteropWrappers.SimpleArrayMeshPointer())
       {
-        IntPtr pMeshes = meshes.NonConstPointer();
-        int count = UnsafeNativeMethods.ON_Brep_CreateMesh3(pConstBrep, pMeshes, pMeshParameters);
-        Mesh[] rc = null;
-        if (count > 0)
-          rc = meshes.ToNonConstArray();
-        return rc;
+        IntPtr ptr_mesh_array = meshes.NonConstPointer();
+        int count = UnsafeNativeMethods.ON_Brep_CreateMesh3(ptr_const_brep, ptr_mesh_array, pMeshParameters);
+        return count < 1 ? null : meshes.ToNonConstArray();
       }
     }
-
-    //DR: I was testing this, but I removed it as it is now possible to get 3D curves out of BrepLoops,
-    //    so this can be implemented in pure .NET.
-    ///// <summary>
-    ///// Create a minimal representation of a Brep. Only Brep Faces with a single loop 
-    ///// containing either 3 or 4 sharp corners will be included in the mesh. 
-    ///// This method is in development and may well disappear, do not use it.
-    ///// </summary>
-    ///// <param name="brep">Brep to approximate.</param>
-    ///// <returns>A minimal representation of the Brep or null on failure.</returns>
-    //[System.ComponentModel.EditorBrowsable(System.ComponentModel.EditorBrowsableState.Never)]
-    //public static Mesh CreateFromBrepSimple(Brep brep)
-    //{
-    //  IntPtr pConstBrep = brep.ConstPointer();
-    //  IntPtr newMesh = UnsafeNativeMethods.ON_Mesh_BrepToMeshSimple(pConstBrep);
-    //  if (newMesh == null)
-    //    return null;
-
-    //  return new Mesh(newMesh, null);
-    //}
 
     /// <summary>
     /// Computes the solid union of a set of meshes.
@@ -766,12 +1194,22 @@ namespace Rhino.Geometry
       if (mh != null)
         return mh.MeshPointer();
 
-#if RDK_UNCHECKED
-      Rhino.Render.RenderMesh rm = m__parent as Rhino.Render.RenderMesh;
-      if( rm!=null )
-        return rm.GetConst_ON_Mesh_Pointer();
-#endif
       return base._InternalGetConstPointer();
+    }
+
+    /// <summary>
+    /// Performs some memory cleanup if necessary
+    /// </summary>
+    protected override void OnSwitchToNonConst()
+    {
+      MeshHolder mh = m__parent as MeshHolder;
+      base.OnSwitchToNonConst();
+
+      if (mh != null)
+      {
+        m__parent = null;
+        mh.ReleaseMesh();
+      }
     }
 
     internal override object _GetConstObjectParent()
@@ -781,8 +1219,8 @@ namespace Rhino.Geometry
       return base._GetConstObjectParent();
     }
 
-    internal Mesh(IntPtr native_pointer, object parent)
-      : base(native_pointer, parent, -1)
+    internal Mesh(IntPtr nativePointer, object parent)
+      : base(nativePointer, parent, -1)
     {
       if (null == parent)
         ApplyMemoryPressure();
@@ -941,6 +1379,20 @@ namespace Rhino.Geometry
       return UnsafeNativeMethods.ON_Mesh_IsManifold(ptr, topologicalTest, ref isOriented, ref hasBoundary);
     }
 
+    /// <summary>
+    /// Will return true if SetCachedTextureCoordinates has been called;
+    /// otherwise will return false.
+    /// </summary>
+    public bool HasCachedTextureCoordinates
+    {
+      get
+      {
+        var const_pointer = ConstPointer();
+        var value  = UnsafeNativeMethods.ON_Mesh_HasCachedTextureCoordinates(const_pointer);
+        return value;
+      }
+    }
+
     #region fake list access
     private Rhino.Geometry.Collections.MeshVertexList m_vertices;
     /// <summary>
@@ -1070,6 +1522,31 @@ namespace Rhino.Geometry
     }
 
     /// <summary>
+    /// Set cached texture coordinates using the specified mapping.
+    /// </summary>
+    /// <param name="tm"></param>
+    /// <param name="xf"></param>
+    public void SetCachedTextureCoordinates(TextureMapping tm, ref Transform xf)
+    {
+      UnsafeNativeMethods.ON_Mesh_SetCachedTextureCoordinates(ConstPointer(), tm.ConstPointer(), ref xf, false);
+    }
+
+    /// <summary>
+    /// Call this method to get cached texture coordinates for a texture
+    /// mapping with the specified Id.
+    /// </summary>
+    /// <param name="textureMappingId">
+    /// Texture mapping Id
+    /// </param>
+    /// <returns>
+    /// Object which allows access to coordinates and other props.
+    /// </returns>
+    public CachedTextureCoordinates GetCachedTextureCoordinates(Guid textureMappingId)
+    {
+      return CachedTextureCoordinates.GetCachedTextureCoordinates(this, textureMappingId);
+    }
+
+    /// <summary>
     /// Removes any unreferenced objects from arrays, reindexes as needed 
     /// and shrinks arrays to minimum required size.
     /// </summary>
@@ -1144,7 +1621,7 @@ namespace Rhino.Geometry
     //int GetMeshEdgeList(ON_SimpleArray<ON_2dex>& edge_list, ON_SimpleArray<int>& ci_meshtop_edge_map, int edge_type_partition[5]) const;
     //int GetMeshEdgeList(ON_SimpleArray<ON_2dex>& edge_list, ON_SimpleArray<int>& ci_meshtop_edge_map, ON_SimpleArray<int>& ci_meshtop_vertex_map, int edge_type_partition[5]) const;
 
-#if USING_V5_SDK
+#if RHINO_SDK
     /// <summary>
     /// Makes sure that faces sharing an edge and having a difference of normal greater
     /// than or equal to angleToleranceRadians have unique vertexes along that edge,
@@ -1172,7 +1649,6 @@ namespace Rhino.Geometry
       IntPtr pThis = NonConstPointer();
       UnsafeNativeMethods.RHC_RhinoWeldMesh(pThis, angleToleranceRadians);
     }
-#endif
 
     /// <summary>
     /// Attempts to fix inconsistencies in the directions of meshfaces for a mesh. This function
@@ -1274,7 +1750,6 @@ namespace Rhino.Geometry
       }
     }
 
-#if RHINO_SDK
     /// <summary>
     /// Constructs the outlines of a mesh projected against a plane.
     /// </summary>
@@ -1344,6 +1819,11 @@ namespace Rhino.Geometry
     /// sense that the edge only has one face.
     /// </summary>
     /// <returns>An array of polylines, or null on error.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_dupmeshboundary.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_dupmeshboundary.cs' lang='cs'/>
+    /// <code source='examples\py\ex_dupmeshboundary.py' lang='py'/>
+    /// </example>
     public Polyline[] GetNakedEdges()
     {
       IntPtr pConstThis = ConstPointer();
@@ -1394,6 +1874,11 @@ namespace Rhino.Geometry
     /// Appends a copy of another mesh to this one and updates indices of appended mesh parts.
     /// </summary>
     /// <param name="other">Mesh to append to this one.</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_createmeshfrombrep.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_createmeshfrombrep.cs' lang='cs'/>
+    /// <code source='examples\py\ex_createmeshfrombrep.py' lang='py'/>
+    /// </example>
     public void Append(Mesh other)
     {
       if (null == other || other.ConstPointer() == ConstPointer())
@@ -1403,6 +1888,7 @@ namespace Rhino.Geometry
       UnsafeNativeMethods.ON_Mesh_Append(ptr, otherPtr);
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Gets the point on the mesh that is closest to a given test point.
     /// </summary>
@@ -1577,7 +2063,9 @@ namespace Rhino.Geometry
       int argb = UnsafeNativeMethods.ON_Mesh_MeshColorAt(pConstThis, faceIndex, t0, t1, t2, t3);
 
       if (argb < 0) { return Color.Transparent; }
-      return System.Drawing.Color.FromArgb(argb);
+      Color col = Color.FromArgb(argb);
+      col = Color.FromArgb(255, col.B, col.G, col.R);
+      return col;
     }
 
     /// <summary>
@@ -1624,6 +2112,7 @@ namespace Rhino.Geometry
         return null;
       return new Mesh(pNewMesh, null);
     }
+#endif
     #endregion
 
     internal bool IndexOpBool(int which, int index)
@@ -1724,13 +2213,53 @@ namespace Rhino.Geometry
 
     #endregion
 
+    /// <summary>
+    /// In ancient times (or modern smartphone times), some rendering engines
+    /// were only able to process small batches of triangles and the
+    /// CreatePartitions() function was provided to partition the mesh into
+    /// subsets of vertices and faces that those rendering engines could handle.
+    /// </summary>
+    /// <param name="maximumVertexCount"></param>
+    /// <param name="maximumTriangleCount"></param>
+    /// <returns>true on success</returns>
+    public bool CreatePartitions(int maximumVertexCount, int maximumTriangleCount)
+    {
+      IntPtr pThis = NonConstPointer();
+      return UnsafeNativeMethods.ON_Mesh_CreatePartition(pThis, maximumVertexCount, maximumTriangleCount);
+    }
+
+    /// <summary>
+    /// Number of partition information chunks stored on this mesh based
+    /// on the last call to CreatePartitions
+    /// </summary>
+    public int PartitionCount
+    {
+      get
+      {
+        IntPtr pConstThis = ConstPointer();
+        return UnsafeNativeMethods.ON_Mesh_PartitionCount(pConstThis);
+      }
+    }
+
+    /// <summary>
+    /// Retrieves a partition. See <see cref="CreatePartitions"/> for details.
+    /// </summary>
+    /// <param name="which">The partition index.</param>
+    /// <returns></returns>
+    public MeshPart GetPartition(int which)
+    {
+      IntPtr pConstThis = NonConstPointer();
+      int vi0=0, vi1=0, fi0=0, fi1=0;
+      int vert_count = 0;
+      int tri_count = 0;
+      if (UnsafeNativeMethods.ON_Mesh_GetMeshPart(pConstThis, which, ref vi0, ref vi1, ref fi0, ref fi1, ref vert_count, ref tri_count))
+        return new MeshPart(vi0, vi1, fi0, fi1, vert_count, tri_count);
+      return null;
+    }
 
 
     //[skipping]
     //  bool SetTextureCoordinates( 
-    //  bool HasCachedTextureCoordinates() const;
-    //  const ON_TextureCoordinates* CachedTextureCoordinates( 
-    //  const ON_TextureCoordinates* SetCachedTextureCoordinates( 
     //  bool EvaluateMeshGeometry( const ON_Surface& ); // evaluate surface at tcoords
     //  int GetVertexEdges( 
     //  int GetMeshEdges( 
@@ -1744,7 +2273,6 @@ namespace Rhino.Geometry
     //  bool FaceIsHidden( int meshvi ) const;
     //  const ON_MeshTopology& Topology() const;
     //  void DestroyTopology();
-    //  const ON_MeshPartition* CreatePartition( 
     //  const ON_MeshPartition* Partition() const;
     //  void DestroyPartition();
     //  const class ON_MeshNgonList* NgonList() const;
@@ -1771,6 +2299,24 @@ namespace Rhino.Geometry
 
 #if RHINO_SDK
     /// <summary>
+    /// Reduce polygon count
+    /// </summary>
+    /// <param name="desiredPolygonCount">desired or target number of faces</param>
+    /// <param name="allowDistortion">
+    /// If true mesh appearance is not changed even if the target polygon count is not reached
+    /// </param>
+    /// <param name="accuracy">Integer from 1 to 10 telling how accurate reduction algorithm
+    ///  to use. Greater number gives more accurate results
+    /// </param>
+    /// <param name="normalizeSize">If true mesh is fitted to an axis aligned unit cube until reduction is complete</param>
+    /// <returns>True if mesh is successfully reduced and false if mesh could not be reduced for some reason.</returns>
+    public bool Reduce(int desiredPolygonCount, bool allowDistortion, int accuracy, bool normalizeSize)
+    {
+      IntPtr ptr_this = NonConstPointer();
+      return UnsafeNativeMethods.RHC_RhinoReduceMesh(ptr_this, desiredPolygonCount, allowDistortion, accuracy, normalizeSize);
+    }
+
+    /// <summary>
     /// Constructs contour curves for a mesh, sectioned along a linear axis.
     /// </summary>
     /// <param name="meshToContour">A mesh to contour.</param>
@@ -1778,6 +2324,11 @@ namespace Rhino.Geometry
     /// <param name="contourEnd">An end point of the contouring axis.</param>
     /// <param name="interval">An interval distance.</param>
     /// <returns>An array of curves. This array can be empty.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_makerhinocontours.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_makerhinocontours.cs' lang='cs'/>
+    /// <code source='examples\py\ex_makerhinocontours.py' lang='py'/>
+    /// </example>
     public static Curve[] CreateContourCurves(Mesh meshToContour, Point3d contourStart, Point3d contourEnd, double interval)
     {
       IntPtr pConstMesh = meshToContour.ConstPointer();
@@ -2227,6 +2778,30 @@ namespace Rhino.Geometry.Collections
         Point3f pt = new Point3f();
         UnsafeNativeMethods.ON_Mesh_Vertex(pConstMesh, i, ref pt);
         rc[i] = new Point3d(pt);
+      }
+      return rc;
+    }
+
+    /// <summary>
+    /// Copies all vertices to a linear array of float in x,y,z order
+    /// </summary>
+    /// <returns>The float array.</returns>
+    public float[] ToFloatArray()
+    {
+      int count = Count;
+      float[] rc = new float[count * 3];
+      IntPtr const_ptr_mesh = m_mesh.ConstPointer();
+      Point3f pt = new Point3f();
+      int index = 0;
+      // There is a much more efficient way to do this with
+      // marshalling the whole array at once, but this will
+      // do for now
+      for (int i = 0; i < count; i++)
+      {
+        UnsafeNativeMethods.ON_Mesh_Vertex(const_ptr_mesh, i, ref pt);
+        rc[index++] = pt.X;
+        rc[index++] = pt.Y;
+        rc[index++] = pt.Z;
       }
       return rc;
     }
@@ -2737,6 +3312,7 @@ namespace Rhino.Geometry.Collections
       return m_mesh.IndexOpBool(Mesh.idxCollapseEdge, topologyEdgeIndex);
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Divides a mesh edge to create two or more triangles
     /// </summary>
@@ -2767,6 +3343,7 @@ namespace Rhino.Geometry.Collections
       IntPtr pMesh = m_mesh.NonConstPointer();
       return UnsafeNativeMethods.ON_Mesh_SplitMeshEdge(pMesh, topologyEdgeIndex, point);
     }
+#endif
 
     /// <summary>
     /// Determines if a mesh edge index is valid input for <see cref="SwapEdge"/>.
@@ -3365,6 +3942,44 @@ namespace Rhino.Geometry.Collections
       face_ids.Keys.CopyTo(rc, 0);
       return rc;
     }
+
+
+    /// <summary>
+    /// Copies all of the faces to a linear integer of indices
+    /// </summary>
+    /// <returns>The int array.</returns>
+    /// <param name="asTriangles">If set to <c>true</c> as triangles.</param>
+    public int[] ToIntArray(bool asTriangles)
+    {
+      int count = asTriangles ? (QuadCount * 2 + TriangleCount) * 3 : Count * 4;
+      int[] rc = new int[count];
+      int current = 0;
+      int face_count = Count;
+      MeshFace face = new MeshFace();
+      IntPtr const_ptr_mesh = m_mesh.ConstPointer();
+      for (int index = 0; index < face_count; index++)
+      {
+        UnsafeNativeMethods.ON_Mesh_GetFace(const_ptr_mesh, index, ref face);
+        rc[current++] = face.A;
+        rc[current++] = face.B;
+        rc[current++] = face.C;
+        if (asTriangles)
+        {
+          if (face.C != face.D)
+          {
+            rc[current++] = face.C;
+            rc[current++] = face.D;
+            rc[current++] = face.A;
+          }
+        }
+        else
+        {
+          rc[current++] = face.D;
+        }
+      }
+      return rc;
+    }
+
     #endregion
 
     /// <summary>
@@ -3479,6 +4094,51 @@ namespace Rhino.Geometry.Collections
         return new int[0];
       return v;
     }
+
+#if RHINO_SDK
+    /// <summary>
+    /// Find all connected face indices where adjacent face normals meet
+    /// the criteria of angleRadians and greaterThanAngle
+    /// </summary>
+    /// <param name="faceIndex">face index to start from</param>
+    /// <param name="angleRadians">angle to use for comparison of what is connected</param>
+    /// <param name="greaterThanAngle">
+    /// If true angles greater than or equal to are considered connected.
+    /// If false, angles less than or equal to are considerd connected.</param>
+    /// <returns>list of connected face indices</returns>
+    public int[] GetConnectedFaces(int faceIndex, double angleRadians, bool greaterThanAngle)
+    {
+      IntPtr ptr_const_mesh = m_mesh.ConstPointer();
+      using (var indices = new Runtime.InteropWrappers.SimpleArrayInt())
+      {
+        IntPtr ptr_simplearray_int = indices.NonConstPointer();
+        UnsafeNativeMethods.RHC_RhinoMakeConnectedMeshFaceList(ptr_const_mesh, faceIndex, angleRadians, greaterThanAngle, ptr_simplearray_int);
+        return indices.ToArray();
+      }
+    }
+
+    /// <summary>
+    /// Uses startFaceIndex and finds all connected face indexes up to unwelded
+    /// or naked edges. If treatNonmanifoldLikeUnwelded is true then non-manifold
+    /// edges will be considered as unwelded or naked
+    /// </summary>
+    /// <param name="startFaceIndex">Initial face index</param>
+    /// <param name="treatNonmanifoldLikeUnwelded">
+    /// True means non-manifold edges will be handled like unwelded edges, 
+    /// False means they aren't considered
+    /// </param>
+    /// <returns>Array of connected face indexes</returns>
+    public int[] GetConnectedFacesToEdges(int startFaceIndex, bool treatNonmanifoldLikeUnwelded)
+    {
+      IntPtr ptr_const_mesh = m_mesh.ConstPointer();
+      using (var indices = new Runtime.InteropWrappers.SimpleArrayInt())
+      {
+        IntPtr ptr_simplearray_int = indices.NonConstPointer();
+        UnsafeNativeMethods.RHC_RhinoMakeMeshPartFaceList(ptr_const_mesh, startFaceIndex, treatNonmanifoldLikeUnwelded, ptr_simplearray_int);
+        return indices.ToArray();
+      }
+    }
+#endif
     #endregion
 
     #region IEnumerable implementation

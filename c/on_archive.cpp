@@ -38,7 +38,7 @@ RH_C_FUNCTION bool ON_BinaryArchive_Read3dmStartSection(ON_BinaryArchive* pBinar
   return rc;
 }
 
-RH_C_FUNCTION unsigned int ON_BinaryArchive_Dump3dmChunk(ON_BinaryArchive* pBinaryArchive, ON_TextLog* pTextLog, int recursion_depth)
+RH_C_FUNCTION unsigned int ON_BinaryArchive_Dump3dmChunk(ON_BinaryArchive* pBinaryArchive, ON_TextLog* pTextLog)
 {
   unsigned int rc = 0;
   if( pBinaryArchive && pTextLog )
@@ -136,6 +136,41 @@ RH_C_FUNCTION bool ON_BinaryArchive_WriteByte2(ON_BinaryArchive* pArchive, int c
   bool rc = false;
   if( pArchive && count>0 && val )
     rc = pArchive->WriteByte(count, val);
+  return rc;
+}
+
+// 10-Feb-2014 Dale Fugier, http://mcneel.myjetbrains.com/youtrack/issue/RH-24156
+RH_C_FUNCTION bool ON_BinaryArchive_ReadCompressedBufferSize( ON_BinaryArchive* pArchive, unsigned int* size )
+{
+  bool rc = false;
+  if( pArchive && size )
+  {
+    size_t sizeof_outbuffer = 0;
+    rc = pArchive->ReadCompressedBufferSize( &sizeof_outbuffer );
+    if( rc )
+      *size = (unsigned int)sizeof_outbuffer;
+  }
+  return rc;
+}
+
+// 10-Feb-2014 Dale Fugier, http://mcneel.myjetbrains.com/youtrack/issue/RH-24156
+RH_C_FUNCTION bool ON_BinaryArchive_ReadCompressedBuffer( ON_BinaryArchive* pArchive, unsigned int size, /*ARRAY*/char* pBuffer )
+{
+  bool rc = false;
+  if( pArchive && size > 0 && pBuffer )
+  {
+    int bFailedCRC = 0;
+    rc = pArchive->ReadCompressedBuffer( size, pBuffer, &bFailedCRC );
+  }
+  return rc;
+}
+
+// 10-Feb-2014 Dale Fugier, http://mcneel.myjetbrains.com/youtrack/issue/RH-24156
+RH_C_FUNCTION bool ON_BinaryArchive_WriteCompressedBuffer( ON_BinaryArchive* pArchive, unsigned int size, /*ARRAY*/const char* pBuffer )
+{
+  bool rc = false;
+  if( pArchive && size > 0 && pBuffer )
+    rc = pArchive->WriteCompressedBuffer( size, pBuffer );
   return rc;
 }
 
@@ -439,8 +474,44 @@ RH_C_FUNCTION bool ON_BinaryArchive_WriteGeometry(ON_BinaryArchive* pArchive, co
   bool rc = false;
   if( pArchive && pConstGeometry )
   {
-    rc = pConstGeometry->Write(*pArchive) ? true:false;
+    // 13 March 2013 (S. Baer) RH-16957
+    // The geometry reader was using ReadObject, so we need to use the
+    // WriteObject function instead of the ON_Geometry::Write function
+    rc = pArchive->WriteObject(pConstGeometry);
+    //rc = pConstGeometry->Write(*pArchive) ? true:false;
   }
+  return rc;
+}
+
+RH_C_FUNCTION bool ON_BinaryArchive_ReadObjRef(ON_BinaryArchive* pArchive, ON_ObjRef* pObjRef)
+{
+  bool rc = false;
+  if( pArchive && pObjRef )
+    rc = pObjRef->Read(*pArchive);
+  return rc;
+}
+
+RH_C_FUNCTION bool ON_BinaryArchive_WriteObjRef(ON_BinaryArchive* pArchive, const ON_ObjRef* pConstObjRef)
+{
+  bool rc = false;
+  if( pArchive && pConstObjRef )
+    rc = pConstObjRef->Write(*pArchive);
+  return rc;
+}
+
+RH_C_FUNCTION bool ON_BinaryArchive_ReadObjRefArray(ON_BinaryArchive* pArchive, ON_ClassArray<ON_ObjRef>* pObjRefArray)
+{
+  bool rc = false;
+  if( pArchive && pObjRefArray )
+    rc = pArchive->ReadArray(*pObjRefArray);
+  return rc;
+}
+
+RH_C_FUNCTION bool ON_BinaryArchive_WriteObjRefArray(ON_BinaryArchive* pArchive, const ON_ClassArray<ON_ObjRef>* pConstObjRefArray)
+{
+  bool rc = false;
+  if( pArchive && pConstObjRefArray )
+    rc = pArchive->WriteArray(*pConstObjRefArray);
   return rc;
 }
 
@@ -525,6 +596,9 @@ RH_C_FUNCTION bool ON_BinaryArchive_EndWriteDictionaryEntry(ON_BinaryArchive* pA
 
 RH_C_FUNCTION ON_Object* ON_ReadBufferArchive(int archive_3dm_version, int archive_on_version, int length, /*ARRAY*/const unsigned char* buffer)
 {
+  // Eliminate potential bogus file versions written
+  if (archive_3dm_version > 5 && archive_3dm_version < 50)
+    return NULL;
   ON_Object* rc = NULL;
   if( length>0 && buffer )
   {
@@ -534,245 +608,9 @@ RH_C_FUNCTION ON_Object* ON_ReadBufferArchive(int archive_3dm_version, int archi
   return rc;
 }
 
-#if defined(RHINO_V5SR) || defined(OPENNURBS_BUILD)
-typedef ON_Write3dmBufferArchive CRhCmnWrite3dmBufferArchive;
-#else
-// Ughh... What a pain!!!!
-// ON_Write3dmBufferArchive had a bug in the write function which was fixed in
-// V5. Placing the fix in RhinoCommon so this will also work in V4/Grasshopper
-class CRhCmnWrite3dmBufferArchive : public ON_BinaryArchive
+RH_C_FUNCTION ON_Write3dmBufferArchive* ON_WriteBufferArchive_NewWriter(const ON_Object* pConstObject, int rhinoversion, bool writeuserdata, unsigned int* length)
 {
-public:
-  CRhCmnWrite3dmBufferArchive( size_t initial_sizeof_buffer, size_t max_sizeof_buffer, 
-    int archive_3dm_version,int archive_opennurbs_version );
-
-  ~CRhCmnWrite3dmBufferArchive();
-  size_t SizeOfArchive() const;
-  size_t SizeOfBuffer() const;
-  const void* Buffer() const;
-  void* HarvestBuffer();
-  size_t CurrentPosition() const; 
-  bool SeekFromCurrentPosition(int); 
-  bool SeekFromStart(size_t);
-  bool AtEnd() const;
-protected:
-  size_t Read( size_t, void* ); 
-  size_t Write( size_t, const void* ); // return actual number of bytes written (like fwrite())
-  bool Flush();
-private:
-  void AllocBuffer(size_t);
-  void* m_p;
-  unsigned char* m_buffer;
-  size_t m_sizeof_buffer;
-  const size_t m_max_sizeof_buffer;
-  size_t m_sizeof_archive;
-  size_t m_buffer_position;
-  ON__INT_PTR m_reserved1;
-  ON__INT_PTR m_reserved2;
-  ON__INT_PTR m_reserved3;
-  ON__INT_PTR m_reserved4;
-private:
-  // prohibit use - no implementation
-  CRhCmnWrite3dmBufferArchive(); 
-  CRhCmnWrite3dmBufferArchive( const CRhCmnWrite3dmBufferArchive& );
-  CRhCmnWrite3dmBufferArchive& operator=(const CRhCmnWrite3dmBufferArchive&);
-};
-
-static void ON_SetBinaryArchiveOpenNURBSVersion(ON_BinaryArchive& file, int value)
-{
-  if ( value >= 200012210 )
-  {
-    file.m_3dm_opennurbs_version = value;
-  }
-  else
-  {
-    ON_ERROR("ON_SetBinaryArchiveOpenNURBSVersion - invalid opennurbs version");
-    file.m_3dm_opennurbs_version = 0;
-  }
-}
-
-
-CRhCmnWrite3dmBufferArchive::CRhCmnWrite3dmBufferArchive( 
-          size_t initial_sizeof_buffer, 
-          size_t max_sizeof_buffer, 
-          int archive_3dm_version,
-          int archive_opennurbs_version
-          )
-: ON_BinaryArchive(ON::write3dm)
-, m_p(0)
-, m_buffer(0)
-, m_sizeof_buffer(0)
-, m_max_sizeof_buffer(max_sizeof_buffer)
-, m_sizeof_archive(0)
-, m_buffer_position(0)
-, m_reserved1(0)
-, m_reserved2(0)
-, m_reserved3(0)
-, m_reserved4(0)
-{
-  if ( initial_sizeof_buffer > 0 )
-    AllocBuffer(initial_sizeof_buffer);
-  SetArchive3dmVersion(archive_3dm_version);
-  ON_SetBinaryArchiveOpenNURBSVersion(*this,archive_opennurbs_version);
-}
-
-CRhCmnWrite3dmBufferArchive::~CRhCmnWrite3dmBufferArchive()
-{
-  if ( m_p )
-    onfree(m_p);
-}
-
-void CRhCmnWrite3dmBufferArchive::AllocBuffer( size_t sz )
-{
-  if ( sz > m_sizeof_buffer 
-       && (m_max_sizeof_buffer == 0 || sz <= m_max_sizeof_buffer) 
-     )
-  {
-    if ( sz < 2*m_sizeof_buffer )
-    {
-      sz = 2*m_sizeof_buffer;
-      if ( sz > m_max_sizeof_buffer )
-        sz = m_max_sizeof_buffer;
-    }
-
-    m_p = onrealloc(m_p,sz);
-    m_buffer = (unsigned char*)m_p;
-
-    if ( 0 != m_buffer )
-    {
-      memset( m_buffer + m_sizeof_buffer, 0, sz - m_sizeof_buffer );
-      m_sizeof_buffer = sz;
-    }
-    else
-    {
-      m_sizeof_buffer = 0;
-    }
-
-  }
-}
-
-// ON_BinaryArchive overrides
-size_t CRhCmnWrite3dmBufferArchive::CurrentPosition() const
-{
-  return m_buffer_position;
-}
-
-bool CRhCmnWrite3dmBufferArchive::SeekFromCurrentPosition( int offset )
-{
-  bool rc = false;
-  if ( m_buffer )
-  {
-    if (offset >= 0 )
-    {
-      m_buffer_position += offset;
-      rc = true;
-    }
-    else if ( size_t(-offset) <= m_buffer_position )
-    {
-      m_buffer_position -= (size_t(-offset));
-      rc = true;
-    }
-  }
-  return rc;
-}
-
-bool CRhCmnWrite3dmBufferArchive::SeekFromStart( size_t offset )
-{
-  bool rc = false;
-  if ( m_buffer ) 
-  {
-    m_buffer_position = offset;
-    rc = true;
-  }
-  return rc;
-}
-
-bool CRhCmnWrite3dmBufferArchive::AtEnd() const
-{
-  return (m_buffer_position >= m_sizeof_buffer) ? true : false;
-}
-
-size_t CRhCmnWrite3dmBufferArchive::Read( size_t count, void* buffer )
-{
-  if ( 0 == count || 0 == buffer )
-    return 0;
-
-  size_t maxcount = ( m_sizeof_buffer > m_buffer_position ) 
-                  ? (m_sizeof_buffer - m_buffer_position)
-                  : 0;
-  if ( count > maxcount )
-    count = maxcount;
-
-  if ( count > 0 ) 
-  {
-    memcpy( buffer, m_buffer+m_buffer_position, count );
-    m_buffer_position += count;
-  }
-
-  return count;
-}
-
-size_t CRhCmnWrite3dmBufferArchive::Write( size_t sz, const void* buffer )
-{
-  if ( 0 == sz || 0 == buffer )
-    return 0;
-
-  if ( m_buffer_position + sz > m_sizeof_buffer )
-  {
-    AllocBuffer(m_buffer_position + sz);
-  }
-
-  if ( m_buffer_position + sz > m_sizeof_buffer )
-    return 0;
-
-  memcpy( m_buffer + m_buffer_position, buffer, sz );
-  m_buffer_position += sz;
-  if ( m_buffer_position > m_sizeof_archive )
-    m_sizeof_archive = m_buffer_position;
-
-  return sz;
-}
-
-bool CRhCmnWrite3dmBufferArchive::Flush()
-{
-  // Nothing to flush
-  return true;
-}
-
-
-size_t CRhCmnWrite3dmBufferArchive::SizeOfBuffer() const
-{
-  return m_sizeof_buffer;
-}
-
-const void* CRhCmnWrite3dmBufferArchive::Buffer() const
-{
-  return (const void*)m_buffer;
-}
-
-void* CRhCmnWrite3dmBufferArchive::HarvestBuffer()
-{
-  void* buffer = m_buffer;
-
-  m_p = 0;
-  m_buffer = 0;
-  m_sizeof_buffer = 0;
-  m_sizeof_archive = 0;
-  m_buffer_position = 0;
-
-  return buffer;
-}
-
-size_t CRhCmnWrite3dmBufferArchive::SizeOfArchive() const
-{
-  return m_sizeof_archive;
-}
-
-#endif
-
-RH_C_FUNCTION CRhCmnWrite3dmBufferArchive* ON_WriteBufferArchive_NewWriter(const ON_Object* pConstObject, int rhinoversion, bool writeuserdata, unsigned int* length)
-{
-  CRhCmnWrite3dmBufferArchive* rc = NULL;
+  ON_Write3dmBufferArchive* rc = NULL;
 
   if( pConstObject && length )
   {
@@ -781,7 +619,7 @@ RH_C_FUNCTION CRhCmnWrite3dmBufferArchive* ON_WriteBufferArchive_NewWriter(const
       holder.MoveUserDataFrom(*pConstObject);
     *length = 0;
     size_t sz = pConstObject->SizeOf() + 512; // 256 was too small on x86 builds to account for extra data written
-    rc = new CRhCmnWrite3dmBufferArchive(sz, 0, rhinoversion, ON::Version());
+    rc = new ON_Write3dmBufferArchive(sz, 0, rhinoversion, ON::Version());
     if( rc->WriteObject(pConstObject) )
     {
       *length = (unsigned int)rc->SizeOfArchive();
@@ -803,7 +641,7 @@ RH_C_FUNCTION void ON_WriteBufferArchive_Delete(ON_BinaryArchive* pBinaryArchive
     delete pBinaryArchive;
 }
 
-RH_C_FUNCTION unsigned char* ON_WriteBufferArchive_Buffer(const CRhCmnWrite3dmBufferArchive* pBinaryArchive)
+RH_C_FUNCTION unsigned char* ON_WriteBufferArchive_Buffer(const ON_Write3dmBufferArchive* pBinaryArchive)
 {
   unsigned char* rc = NULL;
   if( pBinaryArchive )
@@ -848,6 +686,95 @@ RH_C_FUNCTION void ONX_Model_ReadNotes(const RHMONO_STRING* path, CRhCmnStringHo
       ON::CloseFile(fp);
     }
   }
+}
+
+RH_C_FUNCTION int ONX_Model_ReadArchiveVersion(const RHMONO_STRING* path)
+{
+  if( path )
+  {
+    INPUTSTRINGCOERCE(_path, path);
+    
+    FILE* fp = ON::OpenFile( _path, L"rb" );
+    if( fp )
+    {
+      ON_BinaryFile file( ON::read3dm, fp);
+      int version = 0;
+      ON_String comment_block;
+      ON_BOOL32 rc = file.Read3dmStartSection( &version, comment_block );
+      if(rc)
+      {
+        ON::CloseFile(fp);
+        return version;
+      }
+      ON::CloseFile(fp);
+    }
+  }
+  
+  return 0;
+}
+
+RH_C_FUNCTION ON_3dmRevisionHistory* ONX_Model_ReadRevisionHistory(const RHMONO_STRING* path, CRhCmnStringHolder* pStringCreated, CRhCmnStringHolder* pStringLastEdited, int* revision)
+{
+  ON_3dmRevisionHistory* rc = NULL;
+  if( path && pStringCreated && pStringLastEdited && revision )
+  {
+    INPUTSTRINGCOERCE(_path, path);
+
+    FILE* fp = ON::OpenFile( _path, L"rb" );
+    if( fp )
+    {
+      ON_BinaryFile file( ON::read3dm, fp);
+      int version = 0;
+      ON_String comments;
+      
+      if(file.Read3dmStartSection( &version, comments ))
+      {
+        ON_3dmProperties prop;
+        file.Read3dmProperties(prop);
+
+        rc = new ON_3dmRevisionHistory(prop.m_RevisionHistory);
+        pStringCreated->Set(prop.m_RevisionHistory.m_sCreatedBy);
+        pStringLastEdited->Set(prop.m_RevisionHistory.m_sLastEditedBy);
+        *revision = prop.m_RevisionHistory.m_revision_count;
+      }
+      ON::CloseFile(fp);
+    }
+  }
+  return rc;
+}
+
+RH_C_FUNCTION bool ON_3dmRevisionHistory_GetDate(const ON_3dmRevisionHistory* pConstRevisionHistory, bool created, int* seconds, int* minutes,
+                                                 int* hours, int* days, int* months, int* years)
+{
+  bool rc = false;
+  if( pConstRevisionHistory && seconds && minutes && hours && days && months && years )
+  {
+    rc = created ? pConstRevisionHistory->CreateTimeIsSet() : pConstRevisionHistory->LastEditedTimeIsSet();
+    if( rc )
+    {
+      tm revdate = created ? pConstRevisionHistory->m_create_time : pConstRevisionHistory->m_last_edit_time;
+      *seconds = revdate.tm_sec;
+      *minutes = revdate.tm_min;
+      *hours = revdate.tm_hour;
+      *days = revdate.tm_mday;
+      *months = revdate.tm_mon;
+      *years = revdate.tm_year + 1900;
+    }
+  }
+  return rc;
+}
+
+RH_C_FUNCTION ON_3dmRevisionHistory* ONX_Model_RevisionHistory(ONX_Model* pModel)
+{
+  if( pModel )
+    return &(pModel->m_properties.m_RevisionHistory);
+  return 0;
+}
+
+RH_C_FUNCTION void ON_3dmRevisionHistory_Delete(ON_3dmRevisionHistory* pRevisionHistory)
+{
+  if( pRevisionHistory )
+    delete pRevisionHistory;
 }
 
 RH_C_FUNCTION void ONX_Model_ReadApplicationDetails(const RHMONO_STRING* path, CRhCmnStringHolder* pApplicationName, CRhCmnStringHolder* pApplicationUrl, CRhCmnStringHolder* pApplicationDetails)
@@ -897,6 +824,47 @@ RH_C_FUNCTION ONX_Model* ONX_Model_ReadFile(const RHMONO_STRING* path, CRhCmnStr
   return rc;
 }
 
+enum ReadFileTableTypeFilter : int
+{
+  ttfNone = 0,
+  ttfPropertiesTable          = 0x000001,
+  ttfSettingsTable            = 0x000002,
+  ttfBitmapTable              = 0x000004,
+  ttfTextureMappingTable      = 0x000008,
+  ttfMaterialTable            = 0x000010,
+  ttfLinetypeTable            = 0x000020,
+  ttfLayerTable               = 0x000040,
+  ttfGroupTable               = 0x000080,
+  ttfFontTable                = 0x000100,
+  ttfFutureFontTable          = 0x000200,
+  ttfDimstyleTable            = 0x000400,
+  ttfLightTable               = 0x000800,
+  ttfHatchpatternTable        = 0x001000,
+  ttfInstanceDefinitionTable  = 0x002000,
+  ttfObjectTable              = 0x004000, 
+  ttfHistoryrecordTable       = 0x008000,
+  ttfUserTable                = 0x010000
+};
+
+enum ObjectTypeFilter : unsigned int
+{
+  otNone  =          0,
+  otPoint         =          1, // some type of ON_Point
+  otPointset      =          2, // some type of ON_PointCloud, ON_PointGrid, ...
+  otCurve         =          4, // some type of ON_Curve like ON_LineCurve, ON_NurbsCurve, etc.
+  otSurface       =          8, // some type of ON_Surface like ON_PlaneSurface, ON_NurbsSurface, etc.
+  otBrep          =       0x10, // some type of ON_Brep
+  otMesh          =       0x20, // some type of ON_Mesh
+  otAnnotation    =      0x200, // some type of ON_Annotation
+  otInstanceDefinition  =      0x800, // some type of ON_InstanceDefinition
+  otInstanceReference   =     0x1000, // some type of ON_InstanceRef
+  otTextDot             =     0x2000, // some type of ON_TextDot
+  otDetail        =     0x8000, // some type of ON_DetailView
+  otHatch         =    0x10000, // some type of ON_Hatch
+  otExtrusion     = 0x40000000, // some type of ON_Extrusion
+  otAny           = 0xFFFFFFFF
+};
+
 RH_C_FUNCTION bool ONX_Model_WriteFile(ONX_Model* pModel, const RHMONO_STRING* path, int version, CRhCmnStringHolder* pStringHolder)
 {
   bool rc = false;
@@ -909,6 +877,25 @@ RH_C_FUNCTION bool ONX_Model_WriteFile(ONX_Model* pModel, const RHMONO_STRING* p
     rc = pModel->Write(_path, version, NULL, pLog);
     if( pStringHolder )
       pStringHolder->Set(s);
+  }
+  return rc;
+}
+
+RH_C_FUNCTION bool ONX_Model_WriteFile2(ONX_Model* pModel, const RHMONO_STRING* path, int version, bool writeRenderMeshes, bool writeAnalysisMeshes, bool writeUserData)
+{
+  bool rc = false;
+  INPUTSTRINGCOERCE(_path, path);
+  if( pModel && _path )
+  {
+    FILE* fp = ON::OpenFile(_path, L"wb");
+    if( 0==fp )
+      return false;
+    ON_BinaryFile binary_file(ON::write3dm, fp);
+    binary_file.EnableSave3dmRenderMeshes(writeRenderMeshes?1:0);
+    binary_file.EnableSave3dmAnalysisMeshes(writeAnalysisMeshes?1:0);
+    binary_file.EnableSaveUserData(writeUserData?1:0);
+    rc = pModel->Write(binary_file, version, 0, 0);
+    ON::CloseFile(fp);
   }
   return rc;
 }
@@ -1014,76 +1001,82 @@ RH_C_FUNCTION void ONX_Model_SetNotes(ONX_Model* pModel, bool visible, bool html
   }
 }
 
-RH_C_FUNCTION int ONX_Model_TableCount(const ONX_Model* pConstModel, int which)
+enum ONXModelTable : int
 {
-  const int idxBitmapTable = 2;
-  const int idxTextureMappingTable = 3;
-  const int idxMaterialTable = 4;
-  const int idxLinetypeTable = 5;
-  const int idxLayerTable = 6;
-  const int idxLightTable = 7;
-  const int idxGroupTable = 8;
-  const int idxFontTable = 9;
-  const int idxDimStyleTable = 10;
-  const int idxHatchPatternTable = 11;
-  const int idxIDefTable = 12;
-  const int idxObjectTable = 13;
-  const int idxHistoryRecordTable = 14;
-  const int idxUserDataTable = 15;
-  const int idxViewTable = 16;
-  const int idxNamedViewTable = 17;
+  onxDumpAll = 0,
+  onxDumpSummary = 1,
+  onxBitmapTable = 2,
+  onxTextureMappingTable = 3,
+  onxMaterialTable = 4,
+  onxLinetypeTable = 5,
+  onxLayerTable = 6,
+  onxLightTable = 7,
+  onxGroupTable = 8,
+  onxFontTable = 9,
+  onxDimStyleTable = 10,
+  onxHatchPatternTable = 11,
+  onxIDefTable = 12,
+  onxObjectTable = 13,
+  onxHistoryRecordTable = 14,
+  onxUserDataTable = 15,
+  onxViewTable = 16,
+  onxNamedViewTable = 17,
+};
+
+RH_C_FUNCTION int ONX_Model_TableCount(const ONX_Model* pConstModel, enum ONXModelTable which)
+{
 
   int rc = 0;
   if( pConstModel )
   {
     switch(which)
     {
-    case idxBitmapTable:
+    case onxBitmapTable:
       rc = pConstModel->m_bitmap_table.Count();
       break;
-    case idxTextureMappingTable:
+    case onxTextureMappingTable:
       rc = pConstModel->m_mapping_table.Count();
       break;
-    case idxMaterialTable:
+    case onxMaterialTable:
       rc = pConstModel->m_material_table.Count();
       break;
-    case idxLinetypeTable:
+    case onxLinetypeTable:
       rc = pConstModel->m_linetype_table.Count();
       break;
-    case idxLayerTable:
+    case onxLayerTable:
       rc = pConstModel->m_layer_table.Count();
       break;
-    case idxLightTable:
+    case onxLightTable:
       rc = pConstModel->m_light_table.Count();
       break;
-    case idxGroupTable:
+    case onxGroupTable:
       rc = pConstModel->m_group_table.Count();
       break;
-    case idxFontTable:
+    case onxFontTable:
       rc = pConstModel->m_font_table.Count();
       break;
-    case idxDimStyleTable:
+    case onxDimStyleTable:
       rc = pConstModel->m_dimstyle_table.Count();
       break;
-    case idxHatchPatternTable:
+    case onxHatchPatternTable:
       rc = pConstModel->m_hatch_pattern_table.Count();
       break;
-    case idxIDefTable:
+    case onxIDefTable:
       rc = pConstModel->m_idef_table.Count();
       break;
-    case idxObjectTable:
+    case onxObjectTable:
       rc = pConstModel->m_object_table.Count();
       break;
-    case idxHistoryRecordTable:
+    case onxHistoryRecordTable:
       rc = pConstModel->m_history_record_table.Count();
       break;
-    case idxUserDataTable:
+    case onxUserDataTable:
       rc = pConstModel->m_userdata_table.Count();
       break;
-    case idxViewTable:
+    case onxViewTable:
       rc = pConstModel->m_settings.m_views.Count();
       break;
-    case idxNamedViewTable:
+    case onxNamedViewTable:
       rc = pConstModel->m_settings.m_named_views.Count();
       break;
     default:
@@ -1093,77 +1086,60 @@ RH_C_FUNCTION int ONX_Model_TableCount(const ONX_Model* pConstModel, int which)
   return rc;
 }
 
-RH_C_FUNCTION void ONX_Model_Dump(const ONX_Model* pConstModel, int which, CRhCmnStringHolder* pStringHolder)
+RH_C_FUNCTION void ONX_Model_Dump(const ONX_Model* pConstModel, enum ONXModelTable which, CRhCmnStringHolder* pStringHolder)
 {
-  const int idxDumpAll = 0;
-  const int idxDumpSummary = 1;
-  const int idxBitmapTable = 2;
-  const int idxTextureMappingTable = 3;
-  const int idxMaterialTable = 4;
-  const int idxLinetypeTable = 5;
-  const int idxLayerTable = 6;
-  const int idxLightTable = 7;
-  const int idxGroupTable = 8;
-  const int idxFontTable = 9;
-  const int idxDimStyleTable = 10;
-  const int idxHatchPatternTable = 11;
-  const int idxIDefTable = 12;
-  const int idxObjectTable = 13;
-  const int idxHistoryRecordTable = 14;
-  const int idxUserDataTable = 15;
-
   if( pConstModel && pStringHolder )
   {
     ON_wString s;
     ON_TextLog log(s);
     switch(which)
     {
-    case idxDumpAll:
+    case onxDumpAll:
       pConstModel->Dump(log);
       break;
-    case idxDumpSummary:
+    case onxDumpSummary:
       pConstModel->DumpSummary(log);
       break;
-    case idxBitmapTable:
+    case onxBitmapTable:
       pConstModel->DumpBitmapTable(log);
       break;
-    case idxTextureMappingTable:
+    case onxTextureMappingTable:
       pConstModel->DumpTextureMappingTable(log);
       break;
-    case idxMaterialTable:
+    case onxMaterialTable:
       pConstModel->DumpMaterialTable(log);
       break;
-    case idxLinetypeTable:
+    case onxLinetypeTable:
       pConstModel->DumpLinetypeTable(log);
       break;
-    case idxLayerTable:
+    case onxLayerTable:
       pConstModel->DumpLayerTable(log);
       break;
-    case idxLightTable:
+    case onxLightTable:
       pConstModel->DumpLightTable(log);
       break;
-    case idxGroupTable:
+    case onxGroupTable:
       pConstModel->DumpGroupTable(log);
       break;
-    case idxFontTable:
+    case onxFontTable:
       pConstModel->DumpFontTable(log);
       break;
-    case idxDimStyleTable:
+    case onxDimStyleTable:
       pConstModel->DumpDimStyleTable(log);
       break;
-    case idxHatchPatternTable:
+    case onxHatchPatternTable:
       pConstModel->DumpHatchPatternTable(log);
       break;
-    case idxIDefTable:
+    case onxIDefTable:
       pConstModel->DumpIDefTable(log);
       break;
-    case idxObjectTable:
+    case onxObjectTable:
       pConstModel->DumpObjectTable(log);
       break;
-    case idxHistoryRecordTable:
+    case onxHistoryRecordTable:
       pConstModel->DumpHistoryRecordTable(log);
       break;
-    case idxUserDataTable:
+    case onxUserDataTable:
       pConstModel->DumpUserDataTable(log);
       break;
     default:
@@ -1402,11 +1378,7 @@ RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddSphere(ONX_Model* pModel, ON_Sphe
   {
     // make sure the plane equation is in-sync for this sphere
     sphere->plane.UpdateEquation();
-#if defined(RHINO_V5SR) || defined(OPENNURBS_BUILD)
     ON_RevSurface* pRevSurface = sphere->RevSurfaceForm(false);
-#else
-    ON_RevSurface* pRevSurface = sphere->RevSurfaceForm();
-#endif
     if( pRevSurface )
     {
       ONX_Model_Object mo;
@@ -1509,12 +1481,8 @@ RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddText(ONX_Model* pModel, const RHM
 
       ON_TextEntity2* text_entity = new ON_TextEntity2();
       text_entity->SetHeight( height );
-#if defined(RHINO_V5SR) || defined(OPENNURBS_BUILD)// only available in V5
       text_entity->SetTextValue( text );
       text_entity->SetTextFormula( 0 );
-#else
-      text_entity->SetUserText(text);
-#endif
       text_entity->SetPlane( temp );
       text_entity->SetFontIndex( font_index );
       if( justification>0 )
@@ -1551,7 +1519,6 @@ RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddSurface(ONX_Model* pModel, const 
   return ::ON_nil_uuid;
 }
 
-#if defined(RHINO_V5SR) || defined(OPENNURBS_BUILD)
 RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddExtrusion(ONX_Model* pModel, const ON_Extrusion* pConstExtrusion, const ON_3dmObjectAttributes* pConstAttributes)
 {
   if( pModel && pConstExtrusion )
@@ -1570,7 +1537,6 @@ RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddExtrusion(ONX_Model* pModel, cons
   }
   return ::ON_nil_uuid;
 }
-#endif
 
 RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddMesh(ONX_Model* pModel, const ON_Mesh* pConstMesh, const ON_3dmObjectAttributes* pConstAttributes)
 {
@@ -1622,11 +1588,7 @@ RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddLeader(ONX_Model* pModel, const R
     for( int i=0; i<count; i++ )
       leader->m_points.Append(points2d[i]);
 
-#if defined(RHINO_V5SR) || defined(OPENNURBS_BUILD)// only available in V5
     leader->SetTextValue(text);
-#else
-    leader->SetUserText(text);
-#endif
 
     ONX_Model_Object mo;
     if( pConstAttributes )
@@ -1676,6 +1638,23 @@ RH_C_FUNCTION ON_UUID ONX_Model_ObjectTable_AddPolyLine(ONX_Model* pModel, int c
   return ::ON_nil_uuid;
 }
 
+RH_C_FUNCTION bool ONX_Model_ObjectTable_Delete(ONX_Model* pModel, ON_UUID object_id)
+{
+  bool rc = false;
+  if( pModel )
+  {
+    for( int i=0; i<pModel->m_object_table.Count(); i++ )
+    {
+      if( pModel->m_object_table[i].m_attributes.m_uuid==object_id )
+      {
+        pModel->m_object_table.Remove(i);
+        rc = true;
+        break;
+      }
+    }
+  }
+  return rc;
+}
 
 RH_C_FUNCTION void ONX_Model_BoundingBox(const ONX_Model* pConstModel, ON_BoundingBox* pBBox)
 {
@@ -1827,6 +1806,14 @@ RH_C_FUNCTION void ONX_Model_HatchPatternTable_Insert(ONX_Model* pModel, const O
   }
 }
 
+RH_C_FUNCTION void ONX_Model_InstanceDefinitionTable_Insert(ONX_Model* pModel, const ON_InstanceDefinition* pConstInstanceDefinition, int index)
+{
+  if( pModel && pConstInstanceDefinition && index>=0 )
+  {
+    pModel->m_idef_table.Insert(index, *pConstInstanceDefinition);
+  }
+}
+
 RH_C_FUNCTION void ONX_Model_MaterialTable_Insert(ONX_Model* pModel, const ON_Material* pConstMaterial, int index)
 {
   if( pModel && pConstMaterial && index>=0)
@@ -1882,6 +1869,14 @@ RH_C_FUNCTION void ONX_Model_HatchPatternTable_RemoveAt(ONX_Model* pModel, int i
   }
 }
 
+RH_C_FUNCTION void ONX_Model_InstanceDefinitionTable_RemoveAt(ONX_Model* pModel, int index)
+{
+  if( pModel && index>=0)
+  {
+    pModel->m_idef_table.Remove(index);
+  }
+}
+
 RH_C_FUNCTION void ONX_Model_MaterialTable_RemoveAt(ONX_Model* pModel, int index)
 {
   if( pModel && index>=0)
@@ -1929,6 +1924,42 @@ RH_C_FUNCTION ON_UUID ONX_Model_HatchPatternTable_Id(const ONX_Model* pConstMode
   return ::ON_nil_uuid;
 }
 
+RH_C_FUNCTION ON_UUID ONX_Model_InstanceDefinitionTable_Id(const ONX_Model* pConstModel, int index)
+{
+  if( pConstModel && index>=0 && index<pConstModel->m_idef_table.Count())
+  {
+    return pConstModel->m_idef_table[index].m_uuid;
+  }
+  return ::ON_nil_uuid;
+}
+
+RH_C_FUNCTION int ONX_Model_InstanceDefinitionTable_Index(const ONX_Model* pConstModel, ON_UUID id)
+{
+  if( pConstModel )
+  {
+    for( int i=0; i<pConstModel->m_idef_table.Count(); i++ )
+    {
+      if( id == pConstModel->m_idef_table[i].m_uuid )
+        return i;
+    }
+  }
+  return -1;
+}
+
+RH_C_FUNCTION const ON_InstanceDefinition* ONX_Model_GetInstanceDefinitionPointer(const ONX_Model* pConstModel, ON_UUID id)
+{
+  if( pConstModel )
+  {
+    for( int i=0; i<pConstModel->m_idef_table.Count(); i++ )
+    {
+      const ON_InstanceDefinition* pIdef = pConstModel->m_idef_table.At(i);
+      if( pIdef && pIdef->m_uuid==id )
+        return pIdef;
+    }
+  }
+  return NULL;
+}
+
 RH_C_FUNCTION ON_UUID ONX_Model_MaterialTable_Id(const ONX_Model* pConstModel, int index)
 {
   if( pConstModel && index>=0 && index<pConstModel->m_material_table.Count())
@@ -1938,31 +1969,14 @@ RH_C_FUNCTION ON_UUID ONX_Model_MaterialTable_Id(const ONX_Model* pConstModel, i
   return ::ON_nil_uuid;
 }
 
-RH_C_FUNCTION void ONX_Model_TableClear(ONX_Model* pModel, int which_table)
+RH_C_FUNCTION void ONX_Model_TableClear(ONX_Model* pModel, enum ONXModelTable which_table)
 {
-  const int idxBitmapTable = 2;
-  const int idxTextureMappingTable = 3;
-  const int idxMaterialTable = 4;
-  const int idxLinetypeTable = 5;
-  const int idxLayerTable = 6;
-  const int idxLightTable = 7;
-  const int idxGroupTable = 8;
-  const int idxFontTable = 9;
-  const int idxDimStyleTable = 10;
-  const int idxHatchPatternTable = 11;
-  const int idxIDefTable = 12;
-  const int idxObjectTable = 13;
-  const int idxHistoryRecordTable = 14;
-  const int idxUserDataTable = 15;
-  const int idxViewTable = 16;
-  const int idxNamedViewTable = 17;
-
   if( pModel )
   {
     pModel->m_layer_table.Empty();
     switch(which_table)
     {
-    case idxBitmapTable:
+    case onxBitmapTable:
       {
         for( int i=0; i<pModel->m_bitmap_table.Count(); i++ )
         {
@@ -1974,40 +1988,40 @@ RH_C_FUNCTION void ONX_Model_TableClear(ONX_Model* pModel, int which_table)
         pModel->m_bitmap_table.Empty();
       }
       break;
-    case idxTextureMappingTable:
+    case onxTextureMappingTable:
       pModel->m_mapping_table.Empty();
       break;
-    case idxMaterialTable:
+    case onxMaterialTable:
       pModel->m_material_table.Empty();
       break;
-    case idxLinetypeTable:
+    case onxLinetypeTable:
       pModel->m_linetype_table.Empty();
       break;
-    case idxLayerTable:
+    case onxLayerTable:
       pModel->m_layer_table.Empty();
       break;
-    case idxLightTable:
+    case onxLightTable:
       pModel->m_light_table.Empty();
       break;
-    case idxGroupTable:
+    case onxGroupTable:
       pModel->m_group_table.Empty();
       break;
-    case idxFontTable:
+    case onxFontTable:
       pModel->m_font_table.Empty();
       break;
-    case idxDimStyleTable:
+    case onxDimStyleTable:
       pModel->m_dimstyle_table.Empty();
       break;
-    case idxHatchPatternTable:
+    case onxHatchPatternTable:
       pModel->m_hatch_pattern_table.Empty();
       break;
-    case idxIDefTable:
+    case onxIDefTable:
       pModel->m_idef_table.Empty();
       break;
-    case idxObjectTable:
+    case onxObjectTable:
       pModel->m_object_table.Empty();
       break;
-    case idxHistoryRecordTable:
+    case onxHistoryRecordTable:
       {
         for( int i=0; i<pModel->m_history_record_table.Count(); i++ )
         {
@@ -2019,7 +2033,7 @@ RH_C_FUNCTION void ONX_Model_TableClear(ONX_Model* pModel, int which_table)
         pModel->m_history_record_table.Empty();
       }
       break;
-    case idxUserDataTable:
+    case onxUserDataTable:
       pModel->m_userdata_table.Empty();
       break;
     }
@@ -2277,13 +2291,25 @@ public:
 
 RH_C_FUNCTION CBinaryFileHelper* ON_BinaryFile_Open(const RHMONO_STRING* path, int mode)
 {
+  // 22-Jan-2014 Dale Fugier, http://mcneel.myjetbrains.com/youtrack/issue/RH-23765
+
+  ON::archive_mode archive_mode = ON::ArchiveMode(mode);
+  if( archive_mode == ON::unknown_archive_mode )
+    return NULL;
+
   INPUTSTRINGCOERCE(_path, path);
-  FILE* fp = ON::OpenFile( _path, L"rb" );
+
+  FILE* fp = 0;
+  if( archive_mode == ON::read || archive_mode == ON::read3dm )
+    fp = ON::OpenFile( _path, L"rb" );
+  else if( archive_mode == ON::write || archive_mode == ON::write3dm )
+    fp = ON::OpenFile( _path, L"wb" );
+  else
+    fp = ON::OpenFile( _path, L"r+b" );
+  
   if( fp )
-  {
-    ON::archive_mode archive_mode = ON::ArchiveMode(mode);
-    return new CBinaryFileHelper(archive_mode, fp);
-  }
+    return new CBinaryFileHelper( archive_mode, fp );
+
   return NULL;
 }
 
@@ -2295,4 +2321,924 @@ RH_C_FUNCTION void ON_BinaryFile_Close(CBinaryFileHelper* pBinaryFile)
       ON::CloseFile(pBinaryFile->m_file_pointer);
     delete pBinaryFile;
   }
+}
+
+
+
+
+
+class ONX_Model_WithFilter : public ONX_Model
+{
+public:
+  bool FilteredRead( ON_BinaryArchive& archive, unsigned int table_filter, unsigned int model_object_type_filter, ON_TextLog* error_log );
+
+  bool FilteredRead( const wchar_t* filename, unsigned int table_filter, unsigned int model_object_type_filter, ON_TextLog* error_log );
+};
+
+static 
+bool CheckForCRCErrors( 
+          ON_BinaryArchive& archive, 
+          ONX_Model& model,
+          ON_TextLog* error_log,
+          const char* sSection
+          )
+{
+  // returns true if new CRC errors are found
+  bool rc = false;
+  int new_crc_count = archive.BadCRCCount();
+  
+  if ( model.m_crc_error_count != new_crc_count ) 
+  {
+    if ( error_log )
+    {
+      error_log->Print("ERROR: Corrupt %s. (CRC errors).\n",sSection);
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    model.m_crc_error_count = new_crc_count;
+    rc = true;
+  }
+
+  return rc;
+}
+
+
+bool ONX_Model_WithFilter::FilteredRead(ON_BinaryArchive& archive, unsigned int table_filter, unsigned int model_object_type_filter, ON_TextLog* error_log )
+{
+  const int max_error_count = 2000;
+  int error_count = 0;
+  bool return_code = true;
+  int count, rc;
+
+  Destroy(); // get rid of any residual stuff
+
+  // STEP 1: REQUIRED - Read start section
+  if ( !archive.Read3dmStartSection( &m_3dm_file_version, m_sStartSectionComments ) )
+  {
+    if ( error_log) error_log->Print("ERROR: Unable to read start section. (ON_BinaryArchive::Read3dmStartSection() returned false.)\n");
+    return false;
+  }
+  else if ( CheckForCRCErrors( archive, *this, error_log, "start section" ) )
+    return_code = false;
+
+  // STEP 2: REQUIRED - Read properties section
+  if ( !archive.Read3dmProperties( m_properties ) )
+  {
+    if ( error_log) error_log->Print("ERROR: Unable to read properties section. (ON_BinaryArchive::Read3dmProperties() returned false.)\n");
+    return false;
+  }
+  else if ( CheckForCRCErrors( archive, *this, error_log, "properties section" ) )
+    return_code = false;
+
+  // version of opennurbs used to write the file.
+  m_3dm_opennurbs_version = archive.ArchiveOpenNURBSVersion();
+
+  // STEP 3: REQUIRED - Read properties section
+  if ( !archive.Read3dmSettings( m_settings ) )
+  {
+    if ( error_log) error_log->Print("ERROR: Unable to read settings section. (ON_BinaryArchive::Read3dmSettings() returned false.)\n");
+    return false;
+  }
+  else if ( CheckForCRCErrors( archive, *this, error_log, "settings section" ) )
+    return_code = false;
+
+  // STEP 4: REQUIRED - Read embedded bitmap table
+  if ( archive.BeginRead3dmBitmapTable() )
+  {
+    // At the moment no bitmaps are embedded so this table is empty
+    ON_Bitmap* pBitmap = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      pBitmap = NULL;
+      rc = archive.Read3dmBitmap(&pBitmap);
+      if ( rc==0 )
+        break; // end of bitmap table
+      if ( rc < 0 ) 
+      {
+        if ( error_log) 
+        {
+          error_log->Print("ERROR: Corrupt bitmap found. (ON_BinaryArchive::Read3dmBitmap() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        return_code = false;
+      }
+      m_bitmap_table.Append(pBitmap);
+    }
+
+    // If BeginRead3dmBitmapTable() returns true, 
+    // then you MUST call EndRead3dmBitmapTable().
+    if ( !archive.EndRead3dmBitmapTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt bitmap table. (ON_BinaryArchive::EndRead3dmBitmapTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "bitmap table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log) 
+    {
+      error_log->Print("WARNING: Missing or corrupt bitmap table. (ON_BinaryArchive::BeginRead3dmBitmapTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+
+
+  // STEP 5: REQUIRED - Read texture mapping table
+  if ( archive.BeginRead3dmTextureMappingTable() )
+  {
+    ON_TextureMapping* pTextureMapping = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmTextureMapping(&pTextureMapping);
+      if ( rc==0 )
+        break; // end of texture_mapping table
+      if ( rc < 0 ) 
+      {
+        if ( error_log) 
+        {
+          error_log->Print("ERROR: Corrupt render texture_mapping found. (ON_BinaryArchive::Read3dmTextureMapping() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        continue;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pTextureMapping);
+      m_mapping_table.Append(*pTextureMapping);
+      pTextureMapping->m_mapping_index = count;
+      ud.MoveUserDataTo(*m_mapping_table.Last(),false);
+      delete pTextureMapping;
+      pTextureMapping = NULL;
+    }
+    
+    // If BeginRead3dmTextureMappingTable() returns true, 
+    // then you MUST call EndRead3dmTextureMappingTable().
+    if ( !archive.EndRead3dmTextureMappingTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt render texture_mapping table. (ON_BinaryArchive::EndRead3dmTextureMappingTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "render texture_mapping table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt render texture_mapping table. (ON_BinaryArchive::BeginRead3dmTextureMappingTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+
+  // STEP 6: REQUIRED - Read render material table
+  if ( archive.BeginRead3dmMaterialTable() )
+  {
+    ON_Material* pMaterial = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmMaterial(&pMaterial);
+      if ( rc==0 )
+        break; // end of material table
+      if ( rc < 0 ) 
+      {
+        if ( error_log) 
+        {
+          error_log->Print("ERROR: Corrupt render material found. (ON_BinaryArchive::Read3dmMaterial() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pMaterial = new ON_Material; // use default
+        pMaterial->m_material_index = count;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pMaterial);
+      m_material_table.Append(*pMaterial);
+      ud.MoveUserDataTo(*m_material_table.Last(),false);
+      delete pMaterial;
+      pMaterial = NULL;
+    }
+    
+    // If BeginRead3dmMaterialTable() returns true, 
+    // then you MUST call EndRead3dmMaterialTable().
+    if ( !archive.EndRead3dmMaterialTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt render material table. (ON_BinaryArchive::EndRead3dmMaterialTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "render material table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt render material table. (ON_BinaryArchive::BeginRead3dmMaterialTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+
+  // STEP 7: REQUIRED - Read line type table
+  if ( archive.BeginRead3dmLinetypeTable() )
+  {
+    ON_Linetype* pLinetype = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmLinetype(&pLinetype);
+      if ( rc==0 )
+        break; // end of linetype table
+      if ( rc < 0 ) 
+      {
+        if ( error_log) 
+        {
+          error_log->Print("ERROR: Corrupt render linetype found. (ON_BinaryArchive::Read3dmLinetype() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pLinetype = new ON_Linetype; // use default
+        pLinetype->m_linetype_index = count;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pLinetype);
+      m_linetype_table.Append(*pLinetype);
+      ud.MoveUserDataTo(*m_linetype_table.Last(),false);
+      delete pLinetype;
+      pLinetype = NULL;
+    }
+    
+    // If BeginRead3dmLinetypeTable() returns true, 
+    // then you MUST call EndRead3dmLinetypeTable().
+    if ( !archive.EndRead3dmLinetypeTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt render linetype table. (ON_BinaryArchive::EndRead3dmLinetypeTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "render linetype table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt render linetype table. (ON_BinaryArchive::BeginRead3dmLinetypeTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 8: REQUIRED - Read layer table
+  if ( archive.BeginRead3dmLayerTable() )
+  {
+    ON_Layer* pLayer = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      pLayer = NULL;
+      rc = archive.Read3dmLayer(&pLayer);
+      if ( rc==0 )
+        break; // end of layer table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt layer found. (ON_BinaryArchive::Read3dmLayer() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pLayer = new ON_Layer; // use default
+        pLayer->m_layer_index = count;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pLayer);
+      m_layer_table.Append(*pLayer);
+      ud.MoveUserDataTo(*m_layer_table.Last(),false);
+      delete pLayer;
+      pLayer = NULL;
+    }
+    
+    // If BeginRead3dmLayerTable() returns true, 
+    // then you MUST call EndRead3dmLayerTable().
+    if ( !archive.EndRead3dmLayerTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt render layer table. (ON_BinaryArchive::EndRead3dmLayerTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "layer table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log) 
+    {
+      error_log->Print("WARNING: Missing or corrupt layer table. (ON_BinaryArchive::BeginRead3dmLayerTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 9: REQUIRED - Read group table
+  if ( archive.BeginRead3dmGroupTable() )
+  {
+    ON_Group* pGroup = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmGroup(&pGroup);
+      if ( rc==0 )
+        break; // end of group table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt group found. (ON_BinaryArchive::Read3dmGroup() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pGroup = new ON_Group; // use default
+        pGroup->m_group_index = -1;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pGroup);
+      m_group_table.Append(*pGroup);
+      ud.MoveUserDataTo(*m_group_table.Last(),false);
+      delete pGroup;
+      pGroup = NULL;
+    }
+    
+    // If BeginRead3dmGroupTable() returns true, 
+    // then you MUST call EndRead3dmGroupTable().
+    if ( !archive.EndRead3dmGroupTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt group table. (ON_BinaryArchive::EndRead3dmGroupTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "group table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log) 
+    {
+      error_log->Print("WARNING: Missing or corrupt group table. (ON_BinaryArchive::BeginRead3dmGroupTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 10: REQUIRED - Read font table
+  if ( archive.BeginRead3dmFontTable() )
+  {
+    ON_Font* pFont = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmFont(&pFont);
+      if ( rc==0 )
+        break; // end of font table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt font found. (ON_BinaryArchive::Read3dmFont() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pFont = new ON_Font; // use default
+        pFont->m_font_index = -1;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pFont);
+      m_font_table.Append(*pFont);
+      ud.MoveUserDataTo(*m_font_table.Last(),false);
+      delete pFont;
+      pFont = NULL;
+    }
+    
+    // If BeginRead3dmFontTable() returns true, 
+    // then you MUST call EndRead3dmFontTable().
+    if ( !archive.EndRead3dmFontTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt font table. (ON_BinaryArchive::EndRead3dmFontTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "font table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt font table. (ON_BinaryArchive::BeginRead3dmFontTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 11: REQUIRED - Read dimstyle table
+  if ( archive.BeginRead3dmDimStyleTable() )
+  {
+    ON_DimStyle* pDimStyle = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmDimStyle(&pDimStyle);
+      if ( rc==0 )
+        break; // end of dimstyle table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt dimstyle found. (ON_BinaryArchive::Read3dmDimStyle() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pDimStyle = new ON_DimStyle; // use default
+        pDimStyle->m_dimstyle_index = count;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pDimStyle);
+      m_dimstyle_table.Append(*pDimStyle);
+      ud.MoveUserDataTo(*m_dimstyle_table.Last(),false);
+      delete pDimStyle;
+      pDimStyle = NULL;
+    }
+    
+    // If BeginRead3dmDimStyleTable() returns true, 
+    // then you MUST call EndRead3dmDimStyleTable().
+    if ( !archive.EndRead3dmDimStyleTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt dimstyle table. (ON_BinaryArchive::EndRead3dmDimStyleTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "dimstyle table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt dimstyle table. (ON_BinaryArchive::BeginRead3dmDimStyleTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 12: REQUIRED - Read render lights table
+  if ( archive.BeginRead3dmLightTable() )
+  {
+    ON_Light* pLight = NULL;
+    ON_3dmObjectAttributes object_attributes;
+    for( count = 0; true; count++ ) 
+    {
+      object_attributes.Default();
+      rc = archive.Read3dmLight(&pLight,&object_attributes);
+      if ( rc==0 )
+        break; // end of light table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt render light found. (ON_BinaryArchive::Read3dmLight() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        continue;
+      }
+      ONX_Model_RenderLight& light = m_light_table.AppendNew();
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pLight);
+      light.m_light = *pLight;
+      ud.MoveUserDataTo(light.m_light,false);
+      light.m_attributes = object_attributes;
+      delete pLight;
+      pLight = NULL;
+    }
+    
+    // If BeginRead3dmLightTable() returns true, 
+    // then you MUST call EndRead3dmLightTable().
+    if ( !archive.EndRead3dmLightTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt render light table. (ON_BinaryArchive::EndRead3dmLightTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "render light table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt render light table. (ON_BinaryArchive::BeginRead3dmLightTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 13 - read hatch pattern table
+  if ( archive.BeginRead3dmHatchPatternTable() )
+  {
+    ON_HatchPattern* pHatchPattern = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmHatchPattern(&pHatchPattern);
+      if ( rc==0 )
+        break; // end of hatchpattern table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt hatchpattern found. (ON_BinaryArchive::Read3dmHatchPattern() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        pHatchPattern = new ON_HatchPattern; // use default
+        pHatchPattern->m_hatchpattern_index = count;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pHatchPattern);
+      m_hatch_pattern_table.Append(*pHatchPattern);
+      ud.MoveUserDataTo(*m_hatch_pattern_table.Last(),false);
+      delete pHatchPattern;
+      pHatchPattern = NULL;
+    }
+    
+    // If BeginRead3dmHatchPatternTable() returns true, 
+    // then you MUST call EndRead3dmHatchPatternTable().
+    if ( !archive.EndRead3dmHatchPatternTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt hatchpattern table. (ON_BinaryArchive::EndRead3dmHatchPatternTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "hatchpattern table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt hatchpattern table. (ON_BinaryArchive::BeginRead3dmHatchPatternTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 14: REQUIRED - Read instance definition table
+  if ( archive.BeginRead3dmInstanceDefinitionTable() )
+  {
+    ON_InstanceDefinition* pIDef = NULL;
+    for( count = 0; true; count++ ) 
+    {
+      rc = archive.Read3dmInstanceDefinition(&pIDef);
+      if ( rc==0 )
+        break; // end of instance definition table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Corrupt instance definition found. (ON_BinaryArchive::Read3dmInstanceDefinition() < 0.)\n");
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        continue;
+      }
+      ON_UserDataHolder ud;
+      ud.MoveUserDataFrom(*pIDef);
+      m_idef_table.Append(*pIDef);
+      ud.MoveUserDataTo(*m_idef_table.Last(),false);
+      delete pIDef;
+    }
+    
+    // If BeginRead3dmInstanceDefinitionTable() returns true, 
+    // then you MUST call EndRead3dmInstanceDefinitionTable().
+    if ( !archive.EndRead3dmInstanceDefinitionTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt instance definition table. (ON_BinaryArchive::EndRead3dmInstanceDefinitionTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "instance definition table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt instance definition table. (ON_BinaryArchive::BeginRead3dmInstanceDefinitionTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+
+
+  // STEP 15: REQUIRED - Read object (geometry and annotation) table
+  if ( archive.BeginRead3dmObjectTable() )
+  {
+    // optional filter made by setting ON::object_type bits 
+    // For example, if you just wanted to just read points and meshes, you would use
+    // object_filter = ON::point_object | ON::mesh_object;
+
+    int object_filter = model_object_type_filter;
+
+    for( count = 0; true; count++ ) 
+    {
+      ON_Object* pObject = NULL;
+      ON_3dmObjectAttributes attributes;
+      rc = archive.Read3dmObject(&pObject,&attributes,object_filter);
+      if ( rc == 0 )
+        break; // end of object table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Object table entry %d is corrupt. (ON_BinaryArchive::Read3dmObject() < 0.)\n",count);
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        continue;
+      }
+      if ( m_crc_error_count != archive.BadCRCCount() ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: Object table entry %d is corrupt. (CRC errors).\n",count);
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        m_crc_error_count = archive.BadCRCCount();
+      }
+      if ( pObject ) 
+      {
+        // 20 June 2014 S. Baer
+        // The filtered Read3dmObject function does not appear to actually do filtering.
+        // While we wait for that to get fixed in OpenNURBS, just check the object type
+        // here and make sure it passes the filter test. This is being done here because
+        // Dan needs access to this funtionality with the currently available OpenNURBS
+        if( 0==object_filter || (pObject->ObjectType() & object_filter) != 0)
+        {
+          ONX_Model_Object& mo = m_object_table.AppendNew();
+          mo.m_object = pObject;
+          mo.m_bDeleteObject = true;
+          mo.m_attributes = attributes;
+        }
+        else
+        {
+          delete pObject;
+          pObject = 0;
+        }
+      }
+      else
+      {
+        if ( error_log)
+        {
+          if ( rc == 2 )
+            error_log->Print("WARNING: Skipping object table entry %d because it's filtered.\n",count);
+          else if ( rc == 3 )
+            error_log->Print("WARNING: Skipping object table entry %d because it's newer than this code.  Update your OpenNURBS toolkit.\n",count);
+          else
+            error_log->Print("WARNING: Skipping object table entry %d for unknown reason.\n",count);
+        }
+      }
+    }
+    
+    // If BeginRead3dmObjectTable() returns true, 
+    // then you MUST call EndRead3dmObjectTable().
+    if ( !archive.EndRead3dmObjectTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt object light table. (ON_BinaryArchive::EndRead3dmObjectTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "object table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt object table. (ON_BinaryArchive::BeginRead3dmObjectTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 16: Read history table
+  if ( archive.BeginRead3dmHistoryRecordTable() )
+  {
+    for( count = 0; true; count++ ) 
+    {
+      ON_HistoryRecord* pHistoryRecord = NULL;
+      rc = archive.Read3dmHistoryRecord(pHistoryRecord);
+      if ( rc == 0 )
+        break; // end of history record table
+      if ( rc < 0 ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: History record table entry %d is corrupt. (ON_BinaryArchive::Read3dmHistoryRecord() < 0.)\n",count);
+          error_count++;
+          if ( error_count > max_error_count )
+            return false;
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        continue;
+      }
+      if ( m_crc_error_count != archive.BadCRCCount() ) 
+      {
+        if ( error_log)
+        {
+          error_log->Print("ERROR: History record table entry %d is corrupt. (CRC errors).\n",count);
+          error_log->Print("-- Attempting to continue.\n");
+        }
+        m_crc_error_count = archive.BadCRCCount();
+      }
+      if ( pHistoryRecord ) 
+      {
+        m_history_record_table.Append(pHistoryRecord);
+      }
+      else
+      {
+        if ( error_log)
+        {
+          error_log->Print("WARNING: Skipping history record table entry %d for unknown reason.\n",count);
+        }
+      }
+    }
+    
+    // If BeginRead3dmHistoryRecordTable() returns true, 
+    // then you MUST call EndRead3dmHistoryRecordTable().
+    if ( !archive.EndRead3dmHistoryRecordTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt object light table. (ON_BinaryArchive::EndRead3dmObjectTable() returned false.)\n");
+      return false;
+    }
+    if ( CheckForCRCErrors( archive, *this, error_log, "history record table" ) )
+      return_code = false;
+  }
+  else     
+  {
+    if ( error_log)
+    {
+      error_log->Print("WARNING: Missing or corrupt history record table. (ON_BinaryArchive::BeginRead3dmHistoryRecordTable() returned false.)\n");
+      error_log->Print("-- Attempting to continue.\n");
+    }
+    return_code = false;
+  }
+
+  // STEP 17: OPTIONAL - Read user tables as anonymous goo
+  // If you develop a plug-ins or application that uses OpenNURBS files,
+  // you can store anything you want in a user table.
+  for(count=0;true;count++)
+  {
+    if ( archive.Archive3dmVersion() <= 1 )
+    {
+      // no user tables in version 1 archives.
+      break;
+    }
+
+    {
+      ON__UINT32 tcode = 0;
+      ON__INT64 big_value = 0;
+      if ( !archive.PeekAt3dmBigChunkType(&tcode,&big_value) )
+        break;
+      if ( TCODE_USER_TABLE != tcode )
+        break;
+    }
+    ON_UUID plugin_id = ON_nil_uuid;
+    bool bGoo = false;
+    int usertable_3dm_version = 0;
+    int usertable_opennurbs_version = 0;
+    if ( !archive.BeginRead3dmUserTable( plugin_id, &bGoo, &usertable_3dm_version, &usertable_opennurbs_version ) )
+    {
+      // attempt to skip bogus user table
+      const ON__UINT64 pos0 = archive.CurrentPosition();
+      ON__UINT32 tcode = 0;
+      ON__INT64 big_value = 0;
+      if  ( !archive.BeginRead3dmBigChunk(&tcode,&big_value) )
+        break;
+      if ( !archive.EndRead3dmChunk() )
+        break;
+      const ON__UINT64 pos1 = archive.CurrentPosition();
+      if (pos1 <= pos0)
+        break;
+      if ( TCODE_USER_TABLE != tcode )
+        break;
+
+      continue; // skip this bogus user table
+    }
+
+    ONX_Model_UserData& ud = m_userdata_table.AppendNew();
+    ud.m_uuid = plugin_id;
+    ud.m_usertable_3dm_version = usertable_3dm_version;
+    ud.m_usertable_opennurbs_version = usertable_opennurbs_version;
+
+    if ( !archive.Read3dmAnonymousUserTable( usertable_3dm_version, usertable_opennurbs_version, ud.m_goo ) )
+    {
+      if ( error_log) error_log->Print("ERROR: User data table entry %d is corrupt. (ON_BinaryArchive::Read3dmAnonymousUserTable() is false.)\n",count);
+      break;
+    }
+
+    // If BeginRead3dmObjectTable() returns true, 
+    // then you MUST call EndRead3dmUserTable().
+    if ( !archive.EndRead3dmUserTable() )
+    {
+      if ( error_log) error_log->Print("ERROR: Corrupt user data table. (ON_BinaryArchive::EndRead3dmUserTable() returned false.)\n");
+      break;
+    }
+  }
+
+  // STEP 18: OPTIONAL - check for end mark
+  if ( !archive.Read3dmEndMark(&m_file_length) )
+  {
+    if ( archive.Archive3dmVersion() != 1 ) 
+    {
+      // some v1 files are missing end-of-archive markers
+      if ( error_log) error_log->Print("ERROR: ON_BinaryArchive::Read3dmEndMark(&m_file_length) returned false.\n");
+    }
+  }
+
+  // Remap layer, material, linetype, font, dimstyle, hatch pattern, etc., 
+  // indices so the correspond to the model's table array index.
+  //
+  // Polish also sets revision history information if it is missing.
+  // In this case, that is not appropriate so the value of
+  // m_properties.m_RevisionHistory is saved before calling Polish()
+  // and restored afterwards.
+  const ON_3dmRevisionHistory saved_revision_history(m_properties.m_RevisionHistory);
+  Polish();
+  m_properties.m_RevisionHistory = saved_revision_history;
+
+  return return_code;
+}
+
+bool ONX_Model_WithFilter::FilteredRead( const wchar_t* filename, unsigned int table_filter, unsigned int model_object_type_filter, ON_TextLog* error_log )
+{
+  bool bCallDestroy = true;
+  bool rc = false;
+
+  if ( 0 != filename )
+  {
+    FILE* fp = ON::OpenFile(filename,L"rb");
+    if ( 0 != fp )
+    {
+      ON_BinaryFile file(ON::read3dm,fp);
+      rc = FilteredRead(file, table_filter, model_object_type_filter, error_log);
+      ON::CloseFile(fp);
+      bCallDestroy = false;
+    }
+  }
+
+  if ( bCallDestroy )
+    Destroy();
+
+  return rc;
+}
+
+
+
+RH_C_FUNCTION ONX_Model* ONX_Model_ReadFile2(const RHMONO_STRING* path, ReadFileTableTypeFilter tableFilter, ObjectTypeFilter objectTypeFilter, CRhCmnStringHolder* pStringHolder)
+{
+  ONX_Model_WithFilter* rc = NULL;
+  if( path )
+  {
+    INPUTSTRINGCOERCE(_path, path);
+    rc = new ONX_Model_WithFilter();
+    ON_wString s;
+    ON_TextLog log(s);
+    ON_TextLog* pLog = pStringHolder ? &log : NULL;
+    unsigned int table_filter = (unsigned int)tableFilter;
+    unsigned int obj_filter = (unsigned int)objectTypeFilter;
+    if( !rc->FilteredRead(_path, table_filter, obj_filter, pLog) )
+    {
+      delete rc;
+      rc = NULL;
+    }
+    if( pStringHolder )
+      pStringHolder->Set(s);
+  }
+  return rc;
 }

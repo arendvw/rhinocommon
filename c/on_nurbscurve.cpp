@@ -253,7 +253,7 @@ RH_C_FUNCTION double ON_NurbsCurve_GrevilleAbcissa(const ON_NurbsCurve* pCurve, 
   return rc;
 }
 
-RH_C_FUNCTION bool ON_NurbsCurve_GetGrevilleAbcissae(const ON_NurbsCurve* pCurve, int count, /*ARRAY*/double* ga)
+RH_C_FUNCTION bool ON_NurbsCurve_GetGrevilleAbcissae(const ON_NurbsCurve* pCurve, /*ARRAY*/double* ga)
 {
   bool rc = false;
   if( pCurve && ga )
@@ -311,6 +311,39 @@ RH_C_FUNCTION bool ON_NurbsCurve_Reparameterize(ON_NurbsCurve* pCurve, double c)
   return rc;
 }
 
+#if !defined(OPENNURBS_BUILD)  //not available in opennurbs build
+
+// 8-Feb-2013 Dale Fugier, http://mcneel.myjetbrains.com/youtrack/issue/RH-15661
+RH_C_FUNCTION bool RHC_RhinoCreateSpiral0( ON_3DPOINT_STRUCT axis_start, ON_3DVECTOR_STRUCT axis_dir, ON_3DPOINT_STRUCT radius_point, double pitch, double turn_count, double radius0, double radius1, ON_NurbsCurve* pCurve )
+{
+  bool rc = false;
+  if( pCurve )
+  {
+    ON_3dPoint axisStart(axis_start.val);
+    ON_3dVector axisDir(axis_dir.val);
+    ON_3dPoint radiusPoint(radius_point.val);
+    rc = RhinoCreateSpiral( axisStart, axisDir, radiusPoint, pitch, turn_count, radius0, radius1, *pCurve );
+    if( rc && pCurve )
+      rc = pCurve->IsValid() ? true : false;
+  }
+  return rc;
+}
+
+// 8-Feb-2013 Dale Fugier, http://mcneel.myjetbrains.com/youtrack/issue/RH-15661
+RH_C_FUNCTION bool RHC_RhinoCreateSpiral1( const ON_Curve* pRail, double rail_t0, double rail_t1, ON_3DPOINT_STRUCT radius_point, double pitch, double turn_count, double radius0, double radius1, int points_per_turn, ON_NurbsCurve* pCurve )
+{
+  bool rc = false;
+  if( pRail && pCurve )
+  {
+    ON_3dPoint radiusPoint(radius_point.val);
+    rc = RhinoCreateSpiral( *pRail, rail_t0, rail_t1, radiusPoint, pitch, turn_count, radius0, radius1, points_per_turn, *pCurve );
+    if( rc && pCurve )
+      rc = pCurve->IsValid() ? true : false;
+  }
+  return rc;
+}
+
+#endif
 
 /// This should eventually move to an on_ellipse.cpp file
 RH_C_FUNCTION int ON_Ellipse_GetNurbForm(ON_Ellipse* ellipse, ON_NurbsCurve* pNurbsCurve)

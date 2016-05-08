@@ -1,6 +1,8 @@
 using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Serialization;
+using Rhino.Runtime;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.Geometry
 {
@@ -162,13 +164,17 @@ namespace Rhino.Geometry
       get
       {
         IntPtr pThis = ConstPointer();
-        IntPtr pText = UnsafeNativeMethods.ON_Annotation2_Text(pThis, null, false);
-        return pText == IntPtr.Zero ? String.Empty : Marshal.PtrToStringUni(pText);
+        using (var sh = new StringHolder())
+        {
+          IntPtr pString = sh.NonConstPointer();
+          UnsafeNativeMethods.ON_Annotation2_Text(pThis, pString, null, false);
+          return sh.ToString();
+        }
       }
       set
       {
         IntPtr pThis = NonConstPointer();
-        UnsafeNativeMethods.ON_Annotation2_Text(pThis, value, false);
+        UnsafeNativeMethods.ON_Annotation2_Text(pThis, IntPtr.Zero, value, false);
       }
     }
 
@@ -180,13 +186,17 @@ namespace Rhino.Geometry
       get
       {
         IntPtr pThis = ConstPointer();
-        IntPtr pText = UnsafeNativeMethods.ON_Annotation2_Text(pThis, null,true);
-        return pText == IntPtr.Zero ? String.Empty : Marshal.PtrToStringUni(pText);
+        using (var sh = new StringHolder())
+        {
+          IntPtr pString = sh.NonConstPointer();
+          UnsafeNativeMethods.ON_Annotation2_Text(pThis, pString, null, true);
+          return sh.ToString();
+        }
       }
       set
       {
         IntPtr pThis = NonConstPointer();
-        UnsafeNativeMethods.ON_Annotation2_Text(pThis, value,true);
+        UnsafeNativeMethods.ON_Annotation2_Text(pThis, IntPtr.Zero, value,true);
       }
     }
 
@@ -446,6 +456,11 @@ namespace Rhino.Geometry
     /// <param name="xAxis">x axis of the dimension's plane</param>
     /// <param name="normal">normal to the dimension's plane</param>
     /// <param name="offsetDistance">distance from arrow tip to knee point</param>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public RadialDimension(Point3d center, Point3d arrowTip, Vector3d xAxis, Vector3d normal, double offsetDistance)
     {
       IntPtr pThis = UnsafeNativeMethods.ON_RadialDimension2_New();
@@ -543,6 +558,11 @@ namespace Rhino.Geometry
     /// <summary>
     /// Initializes a new instance of the <see cref="TextEntity"/> class.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_textjustify.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_textjustify.cs' lang='cs'/>
+    /// <code source='examples\py\ex_textjustify.py' lang='py'/>
+    /// </example>
     public TextEntity()
     {
       IntPtr ptr = UnsafeNativeMethods.ON_TextEntity2_New();
@@ -586,6 +606,11 @@ namespace Rhino.Geometry
     /// <summary>
     /// Gets or sets the justification of text in relation to its base point.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_textjustify.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_textjustify.cs' lang='cs'/>
+    /// <code source='examples\py\ex_textjustify.py' lang='py'/>
+    /// </example>
     public TextJustification Justification
     {
       get
@@ -647,7 +672,7 @@ namespace Rhino.Geometry
       {
         IntPtr pConstThis = ConstPointer();
         int abgr = UnsafeNativeMethods.ON_TextEntity2_MaskColor(pConstThis);
-        return System.Drawing.ColorTranslator.FromWin32(abgr);
+        return Interop.ColorFromWin32(abgr);
       }
       set
       {
@@ -791,7 +816,7 @@ namespace Rhino.Geometry
       get
       {
         IntPtr ptr = ConstPointer();
-        using (Rhino.Runtime.StringHolder sh = new Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
           IntPtr pString = sh.NonConstPointer();
           UnsafeNativeMethods.ON_TextDot_GetSetText(ptr, false, null, pString);
@@ -805,6 +830,42 @@ namespace Rhino.Geometry
       }
     }
 
-    // Do not wrap height, fontface and display. These are not currently used in Rhino
+    /// <summary>
+    /// Height of font used for displaying the dot
+    /// </summary>
+    public int FontHeight
+    {
+      get
+      {
+        IntPtr pConstThis = ConstPointer();
+        return UnsafeNativeMethods.ON_TextDot_GetHeight(pConstThis);
+      }
+      set
+      {
+        IntPtr pThis = NonConstPointer();
+        UnsafeNativeMethods.ON_TextDot_SetHeight(pThis, value);
+      }
+    }
+
+    /// <summary>Font face used for displaying the dot</summary>
+    public string FontFace
+    {
+      get
+      { 
+        var pConstThis = ConstPointer();
+        using (var sh = new StringHolder())
+        {
+          var pStringHolder = sh.NonConstPointer();
+          UnsafeNativeMethods.ON_TextDot_GetFontFace(pConstThis, pStringHolder);
+          return sh.ToString();
+        }
+      }
+      set
+      {
+        var pThis = NonConstPointer();
+        UnsafeNativeMethods.ON_TextDot_SetFontFace(pThis, value);
+      }
+    }
+
   }
 }

@@ -9,7 +9,7 @@ namespace Rhino.Geometry
   /// </summary>
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 48)]
   [Serializable]
-  public struct Line : IEquatable<Line>
+  public struct Line : IEquatable<Line>, IEpsilonComparable<Line>
   {
     #region members
     internal Point3d m_from;
@@ -252,7 +252,28 @@ namespace Rhino.Geometry
       bool rc = UnsafeNativeMethods.RHC_FitLineToPoints(count, ptArray, ref fitLine);
       return rc;
     }
+
+    /// <summary>
+    /// Creates a line segment between a pair of curves such that the line segment is either tangent or perpendicular to each of the curves.
+    /// </summary>
+    /// <param name="curve0">The first curve.</param>
+    /// <param name="curve1">The second curve.</param>
+    /// <param name="t0">Parameter value of point on curve0. Seed value at input and solution at output.</param>
+    /// <param name="t1">Parameter value of point on curve 0.  Seed value at input and solution at output.</param>
+    /// <param name="perpendicular0">Find line Perpendicuar to (true) or tangent to (false) curve0.</param>
+    /// <param name="perpendicular1">Find line Perpendicuar to (true) or tangent to (false) curve1.</param>
+    /// <param name="line">The line segment if successful.</param>
+    /// <returns>true on success, false on failure.</returns>
+    public static bool TryCreateBetweenCurves(Curve curve0, Curve curve1, ref double t0, ref double t1, bool perpendicular0, bool perpendicular1, out Line line)
+    {
+      line = Line.Unset;
+      IntPtr pCurve0 = curve0.ConstPointer();
+      IntPtr pCurve1 = curve1.ConstPointer();
+      bool rc = UnsafeNativeMethods.RHC_RhGetTanPerpPoint(pCurve0, pCurve1, ref t0, ref t1, perpendicular0, perpendicular1, ref line);
+      return rc;
+    }
 #endif
+
     #endregion
 
     #region methods
@@ -274,6 +295,18 @@ namespace Rhino.Geometry
     public bool Equals(Line other)
     {
       return this == other;
+    }
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Line other, double epsilon)
+    {
+      return m_from.EpsilonEquals(other.m_from, epsilon) &&
+             m_to.EpsilonEquals(other.m_to, epsilon);
     }
 
     /// <summary>

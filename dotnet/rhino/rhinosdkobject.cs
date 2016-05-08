@@ -1,5 +1,8 @@
 using System;
+using System.Collections;
 using Rhino.Geometry;
+using Rhino.Render;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.DocObjects
 {
@@ -31,7 +34,7 @@ namespace Rhino.DocObjects
 
       IntPtr rc = UnsafeNativeMethods.RHC_LookupObjectBySerialNumber(m_rhinoobject_serial_number);
       if (IntPtr.Zero == rc)
-        throw new Rhino.Runtime.DocumentCollectedException();
+        throw new Runtime.DocumentCollectedException();
 
       return rc;
     }
@@ -48,29 +51,31 @@ namespace Rhino.DocObjects
     internal IntPtr NonConstPointer()
     {
       if( IntPtr.Zero==m_pRhinoObject )
-        throw new Rhino.Runtime.DocumentCollectedException();
+        throw new Runtime.DocumentCollectedException();
       return m_pRhinoObject;
     }
 
     // this protected constructor should only be used by "custom" subclasses
     internal RhinoObject()
     {
+      RegisterCustomObjectType(GetType());
       m_rhinoobject_serial_number = 0;
-      m_theDrawCallback = OnRhinoObjectDraw;
-      m_theDuplicateCallback = OnRhinoObjectDuplicate;
-      m_theDocNotifyCallback = OnRhinoObjectDocNotify;
-      m_theActiveInViewportCallback = OnRhinoObjectActiveInViewport;
-      m_theSelectionCallback = OnRhinoObjectSelection;
-      m_thePickCallback = OnRhinoObjectPick;
-      m_thePickedCallback = OnRhinoObjectPicked;
-      m_theTransformCallback = OnRhinoObjectTransform;
-      m_theSpaceMorphCallback = OnRhinoObjectSpaceMorph;
-      m_theDeleteCallback = OnRhinoObjectDeleted;
+      g_the_draw_callback = OnRhinoObjectDraw;
+      g_the_duplicate_callback = OnRhinoObjectDuplicate;
+      g_the_doc_notify_callback = OnRhinoObjectDocNotify;
+      g_the_active_in_viewport_callback = OnRhinoObjectActiveInViewport;
+      g_the_selection_callback = OnRhinoObjectSelection;
+      g_the_pick_callback = OnRhinoObjectPick;
+      g_the_picked_callback = OnRhinoObjectPicked;
+      g_the_transform_callback = OnRhinoObjectTransform;
+      g_the_space_morph_callback = OnRhinoObjectSpaceMorph;
+      g_the_delete_callback = OnRhinoObjectDeleted;
 
-      UnsafeNativeMethods.CRhinoObject_SetCallbacks(m_theDuplicateCallback, m_theDrawCallback, m_theDocNotifyCallback,
-                                                    m_theActiveInViewportCallback, m_theSelectionCallback, m_theTransformCallback,
-                                                    m_theSpaceMorphCallback, m_theDeleteCallback);
-      UnsafeNativeMethods.CRhinoObject_SetPickCallbacks(m_thePickCallback, m_thePickedCallback);
+      UnsafeNativeMethods.CRhinoObject_SetCallbacks(g_the_duplicate_callback, g_the_draw_callback,
+                                                    g_the_doc_notify_callback, g_the_active_in_viewport_callback,
+                                                    g_the_selection_callback, g_the_transform_callback,
+                                                    g_the_space_morph_callback, g_the_delete_callback);
+      UnsafeNativeMethods.CRhinoObject_SetPickCallbacks(g_the_pick_callback, g_the_picked_callback);
     }
 
     internal RhinoObject(uint sn)
@@ -80,7 +85,7 @@ namespace Rhino.DocObjects
 
     internal delegate void RhinoObjectDrawCallback(IntPtr pConstRhinoObject, IntPtr pDisplayPipeline);
     internal delegate void RhinoObjectDuplicateCallback(int docId, uint sourceObjectSerialNumber, uint newObjectSerialNumber, IntPtr newObjectPointer);
-    internal delegate void RhinoObjectDocNotifyCallback(int docId, uint serialNumber, int add);
+    internal delegate void RhinoObjectDocNotifyCallback(int docId, uint serialNumber, int add, Guid managedTypeId);
     internal delegate int RhinoObjectActiveInViewportCallback(int docId, uint serialNumber, IntPtr pRhinoViewport);
     internal delegate void RhinoObjectSelectionCallback(int docId, uint serialNumber);
     internal delegate void RhinoObjectTransformCallback(int docId, uint serialNumber, IntPtr pConstTransform);
@@ -88,20 +93,20 @@ namespace Rhino.DocObjects
     internal delegate void RhinoObjectPickCallback(int docId, uint serialNumber, IntPtr pConstRhinoObject, IntPtr pRhinoObjRefArray);
     internal delegate void RhinoObjectPickedCallback(int docId, uint serialNumber, IntPtr pConstRhinoObject, IntPtr pRhinoObjRefArray, int count);
     internal delegate void RhinoObjectDeletedCallback(uint serialNumber);
-    static RhinoObjectDrawCallback m_theDrawCallback;
-    static RhinoObjectDuplicateCallback m_theDuplicateCallback;
-    static RhinoObjectDocNotifyCallback m_theDocNotifyCallback;
-    static RhinoObjectActiveInViewportCallback m_theActiveInViewportCallback;
-    static RhinoObjectSelectionCallback m_theSelectionCallback;
-    static RhinoObjectTransformCallback m_theTransformCallback;
-    static RhinoObjectSpaceMorphCallback m_theSpaceMorphCallback;
-    static RhinoObjectPickCallback m_thePickCallback;
-    static RhinoObjectPickedCallback m_thePickedCallback;
-    static RhinoObjectDeletedCallback m_theDeleteCallback;
+    static RhinoObjectDrawCallback g_the_draw_callback;
+    static RhinoObjectDuplicateCallback g_the_duplicate_callback;
+    static RhinoObjectDocNotifyCallback g_the_doc_notify_callback;
+    static RhinoObjectActiveInViewportCallback g_the_active_in_viewport_callback;
+    static RhinoObjectSelectionCallback g_the_selection_callback;
+    static RhinoObjectTransformCallback g_the_transform_callback;
+    static RhinoObjectSpaceMorphCallback g_the_space_morph_callback;
+    static RhinoObjectPickCallback g_the_pick_callback;
+    static RhinoObjectPickedCallback g_the_picked_callback;
+    static RhinoObjectDeletedCallback g_the_delete_callback;
 
     static void OnRhinoObjectDraw(IntPtr pConstRhinoObject, IntPtr pDisplayPipeline)
     {
-      RhinoObject rhobj = RhinoObject.CreateRhinoObjectHelper(pConstRhinoObject);
+      RhinoObject rhobj = CreateRhinoObjectHelper(pConstRhinoObject);
       if( rhobj!=null )
         rhobj.OnDraw(new Display.DrawEventArgs(pDisplayPipeline, IntPtr.Zero));
     }
@@ -111,6 +116,7 @@ namespace Rhino.DocObjects
     {
       SubclassCreateNativePointer = true;
     }
+
     static void OnRhinoObjectDuplicate(int docId, uint sourceObjectSerialNumber, uint newObjectSerialNumber, IntPtr newObjectPointer)
     {
       RhinoDoc doc = RhinoDoc.FromId(docId);
@@ -121,39 +127,102 @@ namespace Rhino.DocObjects
         {
           Type t = rhobj.GetType();
           SubclassCreateNativePointer = false;
-          RhinoObject newobj = System.Activator.CreateInstance(t) as RhinoObject;
+          RhinoObject newobj = Activator.CreateInstance(t) as RhinoObject;
           SubclassCreateNativePointer = true;
           if (newobj != null)
           {
             newobj.m_rhinoobject_serial_number = newObjectSerialNumber;
             newobj.m_pRhinoObject = newObjectPointer;
             doc.Objects.AddCustomObjectForTracking(newObjectSerialNumber, newobj, newObjectPointer);
-            newobj.OnDuplicate(rhobj);
+            try
+            {
+              // 7 March 2013 S. Baer (RH-16792)
+              // Don't allow plug-in code to bring down Rhino.
+              newobj.OnDuplicate(rhobj);
+            }
+            catch (Exception ex)
+            {
+              Runtime.HostUtils.ExceptionReport(ex);
+            }
           }
         }
       }
     }
 
-    static System.Collections.Generic.List<RhinoObject> m_custom_objects;
-
-    static void OnRhinoObjectDocNotify(int docId, uint serialNumber, int add)
+    static System.Collections.Generic.List<RhinoObject> g_custom_objects;
+    static System.Collections.Generic.List<Type> g_custom_object_types;
+    static void RegisterCustomObjectType(Type t)
     {
-      RhinoDoc doc = RhinoDoc.FromId(docId);
-      if (doc != null)
+      if (t == null)
+        throw new ArgumentNullException();
+      if (g_custom_object_types == null)
+        g_custom_object_types = new System.Collections.Generic.List<Type>();
+      foreach (var registered in g_custom_object_types)
       {
-        RhinoObject rhobj = doc.Objects.FindCustomObject(serialNumber);
-        if (rhobj != null)
+        if (registered.GUID == t.GUID)
+          return;
+      }
+      g_custom_object_types.Add(t);
+    }
+
+    static void OnRhinoObjectDocNotify(int docId, uint serialNumber, int add, Guid managedTypeId)
+    {
+      try
+      {
+        RhinoDoc doc = RhinoDoc.FromId(docId);
+        if (doc != null)
         {
-          if (add == 1)
+          RhinoObject rhobj = doc.Objects.FindCustomObject(serialNumber);
+          if (rhobj == null && add == 1 && managedTypeId!=Guid.Empty && g_custom_object_types!=null)
           {
-            if (m_custom_objects == null)
-              m_custom_objects = new System.Collections.Generic.List<RhinoObject>();
-            m_custom_objects.Add(rhobj);
-            rhobj.OnAddToDocument(doc);
+            // create the managed parallel object and add it to the document list of custom objects
+            foreach (var registered in g_custom_object_types)
+            {
+              if (registered.GUID == managedTypeId)
+              {
+                SubclassCreateNativePointer = false;
+                rhobj = System.Activator.CreateInstance(registered) as RhinoObject;
+                SubclassCreateNativePointer = true;
+                if (rhobj != null)
+                {
+                  rhobj.m_rhinoobject_serial_number = serialNumber;
+                  IntPtr ptr_object = UnsafeNativeMethods.CRhinoDoc_LookupObjectByRuntimeSerialNumber(docId, serialNumber);
+                  rhobj.m_pRhinoObject = ptr_object;
+                  doc.Objects.AddCustomObjectForTracking(serialNumber, rhobj, ptr_object);
+                }
+                break;
+              }
+            }
           }
-          else
-            rhobj.OnDeleteFromDocument(doc);
+
+          if (rhobj != null)
+          {
+            if (add == 1)
+            {
+              if (g_custom_objects == null)
+                g_custom_objects = new System.Collections.Generic.List<RhinoObject>();
+              g_custom_objects.Add(rhobj);
+              rhobj.OnAddToDocument(doc);
+            }
+            else
+              rhobj.OnDeleteFromDocument(doc);
+
+            // 8 May 2014 S. Baer (RH-21330)
+            // When a custom object is added to or deleted from the document
+            // clear out the "edited" geometry and attributes since we don't
+            // want them hanging around and causing problems in the future
+            rhobj.m_edited_attributes = null;
+            rhobj.m_edited_geometry = null;
+          }
         }
+      }
+      catch (Exception ex)
+      {
+        // 8 Feb 2013 S. Baer (RH-15766)
+        // Add exception handling since some custom objects were throwing
+        // exceptions and that is very dangerous during unmanaged callbacks
+        // like this
+        Runtime.HostUtils.ExceptionReport(ex);
       }
     }
 
@@ -165,7 +234,7 @@ namespace Rhino.DocObjects
       {
         RhinoObject rhobj = doc.Objects.FindCustomObject(serialNumber);
         if (rhobj != null)
-          rc = rhobj.IsActiveInViewport(new Rhino.Display.RhinoViewport(null, pRhinoViewport)) ? 1 : 0;
+          rc = rhobj.IsActiveInViewport(new Display.RhinoViewport(null, pRhinoViewport)) ? 1 : 0;
       }
       return rc;
     }
@@ -212,17 +281,17 @@ namespace Rhino.DocObjects
 
     static void OnRhinoObjectDeleted(uint serialNumber)
     {
-      if (m_custom_objects != null)
+      if (g_custom_objects != null)
       {
-        for (int i = 0; i < m_custom_objects.Count; i++)
+        for (int i = 0; i < g_custom_objects.Count; i++)
         {
-          RhinoObject rhobj = m_custom_objects[i];
+          RhinoObject rhobj = g_custom_objects[i];
           if (rhobj != null && rhobj.m_rhinoobject_serial_number == serialNumber)
           {
             rhobj.m_pRhinoObject = IntPtr.Zero;
             rhobj.m_rhinoobject_serial_number = 0;
-            System.GC.SuppressFinalize(rhobj);
-            m_custom_objects.RemoveAt(i);
+            GC.SuppressFinalize(rhobj);
+            g_custom_objects.RemoveAt(i);
             return;
           }
         }
@@ -233,10 +302,10 @@ namespace Rhino.DocObjects
     {
       for (int i = count - 1; i >= 0; i--)
       {
-        IntPtr pRhinoObjRef = UnsafeNativeMethods.CRhinoObjRefArray_GetLastItem(pRhinoObjRefArray, i);
-        if( IntPtr.Zero!=pRhinoObjRef )
+        IntPtr ptr_rhinoobjref = UnsafeNativeMethods.CRhinoObjRefArray_GetLastItem(pRhinoObjRefArray, i);
+        if( IntPtr.Zero!=ptr_rhinoobjref )
         {
-          yield return new ObjRef(pRhinoObjRef);
+          yield return new ObjRef(ptr_rhinoobjref);
         }
       }
     }
@@ -297,6 +366,7 @@ namespace Rhino.DocObjects
     const int idxCRhinoMorphControl = 18;
     const int idxCRhinoRadialDimension = 19;
     const int idxCRhinoAngularDimension = 20;
+    const int idxCRhinoAnnotationLeader = 21;
 
     internal static RhinoObject CreateRhinoObjectHelper(IntPtr pRhinoObject)
     {
@@ -362,11 +432,9 @@ namespace Rhino.DocObjects
         case idxCRhinoGripObject: //13
           rc = new GripObject(sn);
           break;
-#if USING_V5_SDK
         case idxCRhinoExtrusionObject: //14
           rc = new ExtrusionObject(sn);
           break;
-#endif
         case idxCRhinoLinearDimension: //15
           rc = new LinearDimensionObject(sn);
           break;
@@ -384,6 +452,9 @@ namespace Rhino.DocObjects
           break;
         case idxCRhinoAngularDimension: //20
           rc = new AngularDimensionObject(sn);
+          break;
+        case idxCRhinoAnnotationLeader: //21
+          rc = new LeaderObject(sn);
           break;
         default:
           rc = new RhinoObject(sn);
@@ -407,6 +478,68 @@ namespace Rhino.DocObjects
       }
     }
 
+    /// <summary>Mesh Rhino Objects</summary>
+    /// <param name="rhinoObjects">Objects to mesh</param>
+    /// <param name="parameters">The parameters used to create the meshes</param>
+    /// <param name="meshes"></param>
+    /// <param name="attributes"></param>
+    /// <returns></returns>
+    public static Commands.Result MeshObjects(System.Collections.Generic.IEnumerable<RhinoObject> rhinoObjects, MeshingParameters parameters, out Mesh[] meshes, out ObjectAttributes[] attributes)
+    {
+      using (var rhinoobject_array = new Runtime.INTERNAL_RhinoObjectArray(rhinoObjects))
+      using (var mesh_array = new SimpleArrayMeshPointer())
+      {
+        IntPtr ptr_rhinoobject_array = rhinoobject_array.NonConstPointer();
+        int ui_style = 2; //no ui
+        IntPtr ptr_mesh_parameters = parameters.NonConstPointer();
+        IntPtr ptr_mesharray = mesh_array.NonConstPointer();
+        IntPtr ptr_attributesarray = UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_New();
+        int rc = UnsafeNativeMethods.RHC_RhinoMeshObjects(ptr_rhinoobject_array, ref ui_style, ptr_mesh_parameters, ptr_mesharray, ptr_attributesarray);
+        meshes = mesh_array.ToNonConstArray();
+        int attrib_count = UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_Count(ptr_attributesarray);
+        attributes = new ObjectAttributes[attrib_count];
+        for (int i = 0; i < attrib_count; i++)
+        {
+          IntPtr ptr_attribute = UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_Get(ptr_attributesarray, i);
+          attributes[i] = new ObjectAttributes(ptr_attribute);
+        }
+        UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_Delete(ptr_attributesarray);
+        return (Commands.Result)rc;
+      }
+    }
+
+    /// <summary>Mesh Rhino Objects</summary>
+    /// <param name="rhinoObjects">Objects to mesh</param>
+    /// <param name="parameters">The parameters used to create the meshes</param>
+    /// <param name="simpleDialog"></param>
+    /// <param name="meshes"></param>
+    /// <param name="attributes"></param>
+    /// <returns></returns>
+    public static Commands.Result MeshObjects(System.Collections.Generic.IEnumerable<RhinoObject> rhinoObjects, ref MeshingParameters parameters, ref bool simpleDialog, out Mesh[] meshes, out ObjectAttributes[] attributes)
+    {
+      using (var rhinoobject_array = new Runtime.INTERNAL_RhinoObjectArray(rhinoObjects))
+      using (var mesh_array = new SimpleArrayMeshPointer())
+      {
+        IntPtr ptr_rhinoobject_array = rhinoobject_array.NonConstPointer();
+        int ui_style = simpleDialog ? 0: 1;
+        IntPtr ptr_mesh_parameters = parameters.NonConstPointer();
+        IntPtr ptr_mesharray = mesh_array.NonConstPointer();
+        IntPtr ptr_attributesarray = UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_New();
+        int rc = UnsafeNativeMethods.RHC_RhinoMeshObjects(ptr_rhinoobject_array, ref ui_style, ptr_mesh_parameters, ptr_mesharray, ptr_attributesarray);
+        simpleDialog = ui_style == 0;
+        meshes = mesh_array.ToNonConstArray();
+        int attrib_count = UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_Count(ptr_attributesarray);
+        attributes = new ObjectAttributes[attrib_count];
+        for (int i = 0; i < attrib_count; i++)
+        {
+          IntPtr ptr_attribute = UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_Get(ptr_attributesarray, i);
+          attributes[i] = new ObjectAttributes(ptr_attribute);
+        }
+        UnsafeNativeMethods.ON_SimpleArray_3dmObjectAttributes_Delete(ptr_attributesarray);
+        return (Commands.Result)rc;
+      }
+    }
+
     /// <summary>
     /// Gets the render meshes of some objects.
     /// </summary>
@@ -417,7 +550,7 @@ namespace Rhino.DocObjects
     public static ObjRef[] GetRenderMeshes(System.Collections.Generic.IEnumerable<RhinoObject> rhinoObjects, bool okToCreate, bool returnAllObjects)
     {
       ObjRef[] rc = null;
-      Runtime.INTERNAL_RhinoObjectArray rhinoobject_array = new Rhino.Runtime.INTERNAL_RhinoObjectArray(rhinoObjects);
+      Runtime.INTERNAL_RhinoObjectArray rhinoobject_array = new Runtime.INTERNAL_RhinoObjectArray(rhinoObjects);
       IntPtr pRhObjectArray = rhinoobject_array.NonConstPointer();
       IntPtr pObjRefArray = UnsafeNativeMethods.RHC_RhinoGetRenderMeshes(pRhObjectArray, okToCreate, returnAllObjects);
       rhinoobject_array.Dispose();
@@ -461,8 +594,8 @@ namespace Rhino.DocObjects
     {
       get
       {
-        IntPtr ptr = ConstPointer();
-        return UnsafeNativeMethods.ON_Object_IsValid(ptr, IntPtr.Zero);
+        IntPtr const_ptr = ConstPointer();
+        return UnsafeNativeMethods.ON_Object_IsValid(const_ptr, IntPtr.Zero);
       }
     }
 
@@ -473,8 +606,8 @@ namespace Rhino.DocObjects
     {
       get
       {
-        IntPtr ptr = ConstPointer();
-        int id = UnsafeNativeMethods.CRhinoObject_Document(ptr);
+        IntPtr const_ptr = ConstPointer();
+        int id = UnsafeNativeMethods.CRhinoObject_Document(const_ptr);
         return RhinoDoc.FromId(id);
       }
     }
@@ -483,7 +616,7 @@ namespace Rhino.DocObjects
     /// Gets the underlying geometry for this object.
     /// <para>All rhino objects are composed of geometry and attributes.</para>
     /// </summary>
-    public Rhino.Geometry.GeometryBase Geometry
+    public GeometryBase Geometry
     {
       get
       {
@@ -494,12 +627,12 @@ namespace Rhino.DocObjects
         {
           ComponentIndex ci = new ComponentIndex();
           // use the "const" geometry that is associated with this RhinoObject
-          IntPtr pConstThis = ConstPointer();
-          IntPtr pGeometry = UnsafeNativeMethods.CRhinoObject_Geometry(pConstThis, ci);
-          if (IntPtr.Zero == pGeometry)
+          IntPtr const_ptr_this = ConstPointer();
+          IntPtr const_ptr_geometry = UnsafeNativeMethods.CRhinoObject_Geometry(const_ptr_this, ci);
+          if (IntPtr.Zero == const_ptr_geometry)
             return null;
 
-          m_original_geometry = GeometryBase.CreateGeometryHelper(pGeometry, this);
+          m_original_geometry = GeometryBase.CreateGeometryHelper(const_ptr_geometry, this);
         }
         return m_original_geometry;
       }
@@ -528,8 +661,11 @@ namespace Rhino.DocObjects
         ConstPointer();
         if (m_edited_attributes == value)
           return;
-
+        // make sure the edited attributes still have the same object id
+        // so things like CommitChanges will continue to work
+        var object_id = this.Id;
         m_edited_attributes = value.Duplicate();
+        m_edited_attributes.ObjectId = object_id;
       }
     }
 
@@ -543,8 +679,8 @@ namespace Rhino.DocObjects
       {
         if (m_rhinoobject_serial_number != 0)
           return m_rhinoobject_serial_number;
-        IntPtr pThis = ConstPointer();
-        return UnsafeNativeMethods.CRhinoObject_RuntimeSN(pThis);
+        IntPtr const_ptr_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoObject_RuntimeSN(const_ptr_this);
       }
     }
 
@@ -662,6 +798,11 @@ namespace Rhino.DocObjects
     /// Constructs a deep (full) copy of the geometry.
     /// </summary>
     /// <returns>A copy of the internal geometry.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_duplicateobject.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_duplicateobject.cs' lang='cs'/>
+    /// <code source='examples\py\ex_duplicateobject.py' lang='py'/>
+    /// </example>
     public Rhino.Geometry.GeometryBase DuplicateGeometry()
     {
       if (null != m_edited_geometry)
@@ -836,7 +977,7 @@ namespace Rhino.DocObjects
     public ComponentIndex[] GetSelectedSubObjects()
     {
       IntPtr ptr = ConstPointer();
-      Runtime.INTERNAL_ComponentIndexArray arr = new Runtime.INTERNAL_ComponentIndexArray();
+      var arr = new Runtime.InteropWrappers.INTERNAL_ComponentIndexArray();
       IntPtr pArray = arr.NonConstPointer();
       int count = UnsafeNativeMethods.CRhinoObject_GetSelectedSubObjects(ptr, pArray, true);
       ComponentIndex[] rc = null;
@@ -1075,7 +1216,7 @@ namespace Rhino.DocObjects
     public ComponentIndex[] GetHighlightedSubObjects()
     {
       IntPtr ptr = ConstPointer();
-      Runtime.INTERNAL_ComponentIndexArray arr = new Runtime.INTERNAL_ComponentIndexArray();
+      var arr = new Runtime.InteropWrappers.INTERNAL_ComponentIndexArray();
       IntPtr pArray = arr.NonConstPointer();
       int count = UnsafeNativeMethods.CRhinoObject_GetSelectedSubObjects(ptr, pArray, false);
       ComponentIndex[] rc = null;
@@ -1252,7 +1393,7 @@ namespace Rhino.DocObjects
     /// <returns>A string with the short localized descriptive name.</returns>
     public virtual string ShortDescription(bool plural)
     {
-      using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pConstThis = ConstPointer();
         IntPtr pString = sh.NonConstPointer();
@@ -1344,8 +1485,98 @@ namespace Rhino.DocObjects
       }
     }
 
+#if RDK_CHECKED
     /// <summary>
-    /// Gets an array of subobjects.
+    /// Determines if custom render meshes will be built for a particular object.
+    /// </summary>
+    /// <param name="viewport">The viewport being rendered.</param>
+    /// <param name="preview">
+    /// Type of mesh to build. If preview is true then a smaller mesh may be
+    /// generated in less time, false is meant when actually rendering.
+    /// </param>
+    /// <returns>
+    /// Returns true if custom render mesh(es) will get built for this object.
+    /// </returns>
+    public bool SupportsRenderPrimitiveList(ViewportInfo viewport, bool preview)
+    {
+      // Andy, we are just passing Guid.Empty for the plug-in Id for now until there is an actual
+      // need for it, if it ever comes up we can add an overloaded version that includes the Guid.
+      // Per Andy:
+      // The plug-in Id is optionally used by the custom mesh provider to determine if the plug-in
+      // is allowed access to the custom meshes.  Currently none of our custom mesh providers
+      // pay attention to the Id.
+      return UnsafeNativeMethods.Rdk_CRMManager_WillBuildCustomMesh(viewport.ConstPointer(), ConstPointer(), Guid.Empty, preview);
+    }
+
+    /// <summary>
+    /// Build custom render mesh(es) for this object.
+    /// </summary>
+    /// <param name="viewport">The viewport being rendered.</param>
+    /// <param name="preview">
+    /// Type of mesh to build, if preview is true then a smaller mesh may be
+    /// generated in less time, false is meant when actually rendering.
+    /// </param>
+    /// <returns>
+    /// Returns a RenderPrimitiveList if successful otherwise returns null.
+    /// </returns>
+    public Render.RenderPrimitiveList GetRenderPrimitiveList(ViewportInfo viewport, bool preview)
+    {
+      // Andy, we are just passing Guid.Empty for the plug-in Id for now until there is an actual
+      // need for it, if it ever comes up we can add an overloaded version that includes the Guid.
+      // Per Andy:
+      // The plug-in Id is optionally used by the custom mesh provider to determine if the plug-in
+      // is allowed access to the custom meshes.  Currently none of our custom mesh providers
+      // pay attention to the Id.
+      var primitives = new Render.RenderPrimitiveList(this);
+      var success = UnsafeNativeMethods.Rdk_CRMManager_BuildCustomMeshes(viewport.ConstPointer(), primitives.NonConstPointer(), Guid.Empty, preview);
+      if (success)
+        return primitives;
+      primitives.Dispose();
+      return null;
+    }
+
+    /// <summary>
+    /// Get the bounding box for the custom render meshes associated with this
+    /// object.
+    /// </summary>
+    /// <param name="viewport">The viewport being rendered.</param>
+    /// <param name="preview">
+    /// Type of mesh to build, if preview is true then a smaller mesh may be
+    /// generated in less time, false is meant when actually rendering.
+    /// </param>
+    /// <param name="boundingBox">
+    /// This will be set to BoundingBox.Unset on failure otherwise it will be
+    /// the bounding box for the custom render meshes associated with this
+    /// object.
+    /// </param>
+    /// <returns>
+    /// Returns true if the bounding box was successfully calculated otherwise
+    /// returns false on error.
+    /// </returns>
+    public bool TryGetRenderPrimitiveBoundingBox(ViewportInfo viewport, bool preview, out BoundingBox boundingBox)
+    {
+      boundingBox = BoundingBox.Unset;
+
+      var min = new Point3d();
+      var max = new Point3d();
+
+      // Andy, we are just passing Guid.Empty for the plug-in Id for now until there is an actual
+      // need for it, if it ever comes up we can add an overloaded version that includes the Guid.
+      // Per Andy:
+      // The plug-in Id is optionally used by the custom mesh provider to determine if the plug-in
+      // is allowed access to the custom meshes.  Currently none of our custom mesh providers
+      // pay attention to the Id.
+      if (UnsafeNativeMethods.Rdk_CRMManager_BoundingBox(viewport.ConstPointer(), ConstPointer(), Guid.Empty, preview, ref min, ref max))
+      {
+        boundingBox = new BoundingBox(min, max);
+        return boundingBox.IsValid;
+      }
+
+      return false;
+    }
+#endif
+    /// <summary>
+    /// Gets an array of sub-objects.
     /// </summary>
     /// <returns>An array of subobjects, or null if there are none.</returns>
     public DocObjects.RhinoObject[] GetSubObjects()
@@ -1387,49 +1618,114 @@ namespace Rhino.DocObjects
       return UnsafeNativeMethods.CRhinoObject_GetDynamicTransform(pConstThis, ref transform);
     }
 
-#if RDK_UNCHECKED
+    /// <summary>
+    /// 
+    /// </summary>
+    /// <param name="channel"></param>
+    /// <returns></returns>
+    public TextureMapping GetTextureMapping(int channel)
+    {
+      Transform transform;
+      return GetTextureMapping(channel, out transform);
+    }
+    /// <summary>
+    /// Get objects texture mapping
+    /// </summary>
+    /// <param name="channel"></param>
+    /// <param name="objectTransform"></param>
+    /// <returns></returns>
+    public TextureMapping GetTextureMapping(int channel, out Transform objectTransform)
+    {
+      var id_list = new Collections.RhinoList<int>();
+      var pointer = ConstPointer();
+      objectTransform = Transform.Identity;
+      var mapping = UnsafeNativeMethods.ON_TextureMapping_GetMappingFromObject(pointer, channel, ref objectTransform);
+      return (IntPtr.Zero == mapping ? null : new TextureMapping(mapping));
+    }
+     
+  
+
+
+    /// <summary>
+    /// Get a list of the texture mapping channel Id's associated with object. 
+    /// </summary>
+    /// <returns>
+    /// Returns an array of channel Id's or an empty list if there are not mappings.
+    /// </returns>
+    public int[] GetTextureChannels()
+    {
+      var pointer = ConstPointer();
+      var check = new int[] {};
+      var count = UnsafeNativeMethods.ON_TextureMapping_GetObjectTextureChannels(pointer, 0, check);
+      if (count < 1)
+        return new int[] { };
+      var result = new int[count];
+      UnsafeNativeMethods.ON_TextureMapping_GetObjectTextureChannels(pointer, count, result);
+      return result;
+    }
+
+#if RDK_CHECKED
     /// <summary>
     /// Gets the instance ID of the render material associated with this object.
+    /// Andy says this was probably around before the RenderMaterial property
+    /// but it is only used internally now so I made it private.
     /// </summary>
-    public Guid RenderMaterialInstanceId
+    private Guid RenderMaterialInstanceId
     {
       get
       {
         IntPtr pConstThis = ConstPointer();
-        return UnsafeNativeMethods.Rdk_RenderContent_ObjectMaterialInstanceId(pConstThis);
+        return UnsafeNativeMethods.Rdk_RenderContent_ObjectInstanceId(pConstThis);
       }
+      // DO NOT DO THIS!  See the comment below which came from NonConstPointer()
+      // This was moved to RhinoDoc.Objects.ModifyRenderMaterialInstanceId
+      // !!!DO NOT CALL THIS FUNCTION UNLESS YOU ARE WORKING WITH CUSTOM RHINO OBJECTS!!!
       //set
       //{
       //  IntPtr pThis = NonConstPointer();
       //  UnsafeNativeMethods.Rdk_RenderContent_SetObjectMaterialInstanceid(pThis, value);
       //}
     }
-
     /// <summary>
-    /// Gets the render material associated with this object.
+    /// Gets the render material associated with this object or null if there
+    /// is none.  This does not pay attention to the material source and will
+    /// not check parent objects or layers for a RenderMaterial.
     /// </summary>
-    public Rhino.Render.RenderMaterial RenderMaterial
+    public RenderMaterial RenderMaterial
     {
       get
       {
-        return Rhino.Render.RenderContent.FromInstanceId(RenderMaterialInstanceId) as Rhino.Render.RenderMaterial;
+        return Render.RenderContent.FromId(Document, RenderMaterialInstanceId) as Render.RenderMaterial;
       }
+      // DO NOT DO THIS!  See the comment below which came from NonConstPointer()
+      // This was moved to RhinoDoc.Objects.ModifyRenderMaterialInstanceId
+      // !!!DO NOT CALL THIS FUNCTION UNLESS YOU ARE WORKING WITH CUSTOM RHINO OBJECTS!!!
       //set
       //{
-      //  RenderMaterialInstanceId = value.InstanceId;
+      //  RenderMaterialInstanceId = value.Id;
       //}
     }
-
     /// <summary>
-    /// Gets all object decals associated with this object.
+    /// Gets the RenderMaterial that this object uses based on it's attributes
+    /// and the document that the object is associated with. If there is no 
+    /// RenderMaterial associated with this object then null is returned.  If
+    /// null is returned you should call GetMaterial to get the material used
+    /// to render this object.
     /// </summary>
-    public Rhino.Render.ObjectDecals Decals
+    /// <param name="frontMaterial">
+    /// If true, gets the material used to render the object's front side
+    /// otherwise; gets the material used to render the back side of the
+    /// object.
+    /// </param>
+    /// <returns>
+    /// If there is a RenderMaterial associated with this objects' associated
+    /// Material then it is returned otherwise; null is returned.
+    /// </returns>
+    public RenderMaterial GetRenderMaterial(bool frontMaterial)
     {
-      get
-      {
-        Rhino.Render.ObjectDecals decals = new Rhino.Render.ObjectDecals(this);
-        return decals;
-      }
+      var const_pointer = ConstPointer();
+      var id = UnsafeNativeMethods.Rdk_RenderContent_ObjectMaterialInstanceId(const_pointer, frontMaterial);
+      return RenderContent.FromId(Document, id) as RenderMaterial;
     }
 #endif
     /// <summary>
@@ -1443,11 +1739,11 @@ namespace Rhino.DocObjects
     /// <returns></returns>
     public Material GetMaterial(bool frontMaterial)
     {
-      IntPtr pConstThis = ConstPointer();
+      IntPtr const_pointer = ConstPointer();
       var doc = Document;
       if (doc == null)
         return null;
-      int index = UnsafeNativeMethods.CRhinoObject_GetMaterial(pConstThis, frontMaterial);
+      var index = UnsafeNativeMethods.CRhinoObject_GetMaterial(const_pointer, frontMaterial);
       if( index<-2 ) // -1 and -2 are valid since the material may be the "default" or "locked default" material
         return null;
 
@@ -1610,6 +1906,14 @@ namespace Rhino.DocObjects
       m_ptr = UnsafeNativeMethods.CRhinoObjRef_Copy(pOtherObjRef);
     }
 
+    internal ObjRef(IntPtr pOtherObjRef, bool ptrIsCRhinoObjRef)
+    {
+      if (ptrIsCRhinoObjRef)
+        m_ptr = UnsafeNativeMethods.CRhinoObjRef_Copy(pOtherObjRef);
+      else
+        m_ptr = UnsafeNativeMethods.CRhinoObjRef_FromOnObjRef(pOtherObjRef);
+    }
+
     internal ObjRef(RhinoObject parent, IntPtr pGeometry)
     {
       IntPtr pParent = parent.ConstPointer();
@@ -1705,7 +2009,7 @@ namespace Rhino.DocObjects
       return UnsafeNativeMethods.CRhinoObjRef_Geometry(m_ptr);
     }
 
-    private Rhino.Geometry.GeometryBase ObjRefToGeometryHelper(IntPtr pGeometry)
+    private GeometryBase ObjRefToGeometryHelper(IntPtr pGeometry)
     {
       if (pGeometry == IntPtr.Zero)
         return null;
@@ -1714,7 +2018,7 @@ namespace Rhino.DocObjects
         parent = Object();
       else
         parent = new ObjRef(this); // copy in case user decides to call Dispose on this ObjRef
-      return null == parent ? null : Rhino.Geometry.GeometryBase.CreateGeometryHelper(pGeometry, parent);
+      return null == parent ? null : GeometryBase.CreateGeometryHelper(pGeometry, parent);
     }
 
     /// <summary>
@@ -1737,29 +2041,29 @@ namespace Rhino.DocObjects
       return ObjRefToGeometryHelper(pClippingPlaneSurface) as Rhino.Geometry.ClippingPlaneSurface;
     }
 
+    /// <summary>
+    /// Gets the curve if this reference targeted one.
+    /// </summary>
+    /// <returns>A curve, or null if this reference targeted something else.</returns>
     /// <example>
     /// <code source='examples\vbnet\ex_intersectcurves.vb' lang='vbnet'/>
     /// <code source='examples\cs\ex_intersectcurves.cs' lang='cs'/>
     /// <code source='examples\py\ex_intersectcurves.py' lang='py'/>
     /// </example>
-    /// <summary>
-    /// Gets the curve if this reference targeted one.
-    /// </summary>
-    /// <returns>A curve, or null if this reference targeted something else.</returns>
-    public Geometry.Curve Curve()
+    public Curve Curve()
     {
-      IntPtr pCurve = UnsafeNativeMethods.CRhinoObjRef_Curve(m_ptr);
-      return ObjRefToGeometryHelper(pCurve) as Rhino.Geometry.Curve;
+      IntPtr ptr_curve = UnsafeNativeMethods.CRhinoObjRef_Curve(m_ptr);
+      return ObjRefToGeometryHelper(ptr_curve) as Rhino.Geometry.Curve;
     }
 
     /// <summary>
     /// Gets the edge if this reference geometry is one.
     /// </summary>
     /// <returns>A boundary representation edge; or null on error.</returns>
-    public Geometry.BrepEdge Edge()
+    public BrepEdge Edge()
     {
-      IntPtr pBrepEdge = UnsafeNativeMethods.CRhinoObjRef_Edge(m_ptr);
-      return ObjRefToGeometryHelper(pBrepEdge) as BrepEdge;
+      IntPtr pre_brep_edge = UnsafeNativeMethods.CRhinoObjRef_Edge(m_ptr);
+      return ObjRefToGeometryHelper(pre_brep_edge) as BrepEdge;
     }
 
     /// <summary>
@@ -1767,10 +2071,21 @@ namespace Rhino.DocObjects
     /// a surface, this returns the brep face.
     /// </summary>
     /// <returns>A boundary representation face; or null on error.</returns>
-    public Geometry.BrepFace Face()
+    public BrepFace Face()
     {
-      IntPtr pBrepFace = UnsafeNativeMethods.CRhinoObjRef_Face(m_ptr);
-      return ObjRefToGeometryHelper(pBrepFace) as BrepFace;
+      IntPtr ptr_brep_face = UnsafeNativeMethods.CRhinoObjRef_Face(m_ptr);
+      return ObjRefToGeometryHelper(ptr_brep_face) as BrepFace;
+    }
+
+    /// <summary>
+    /// If the referenced geometry is an edge of a surface,
+    /// this returns the associated brep trim.
+    /// </summary>
+    /// <returns>A boundary representation trim; or null on error</returns>
+    public BrepTrim Trim()
+    {
+      IntPtr ptr_brep_trim = UnsafeNativeMethods.CRhinoObjRef_Trim(m_ptr);
+      return ObjRefToGeometryHelper(ptr_brep_trim) as BrepTrim;
     }
 
     /// <summary>
@@ -1984,6 +2299,11 @@ namespace Rhino.DocObjects
     /// the picked curve. This can be misleading so it may be necessary
     /// to call SelectionMethod() first, before calling CurveParameter
     /// to get the desired information.</remarks>
+    /// <example>
+    /// <code source='examples\vbnet\ex_addradialdimension.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_addradialdimension.cs' lang='cs'/>
+    /// <code source='examples\py\ex_addradialdimension.py' lang='py'/>
+    /// </example>
     public Curve CurveParameter(out double parameter)
     {
       parameter = 0.0;

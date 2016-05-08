@@ -30,7 +30,7 @@ namespace Rhino.Geometry
   /// </summary>
   [StructLayout(LayoutKind.Sequential, Pack = 8, Size = 128)]
   [Serializable]
-  public struct Plane : IEquatable<Plane>
+  public struct Plane : IEquatable<Plane>, IEpsilonComparable<Plane>
   {
     // This is a special case struct that does not match it's C++ counterpart (ON_Plane)
     // The reason we did this was to remove ON_PlaneEquation from the struct and allow for
@@ -370,6 +370,21 @@ namespace Rhino.Geometry
       UnsafeNativeMethods.ON_Plane_GetEquation(ref this, rc);
       return rc;
     }
+
+    /// <summary>
+    /// Get the value of the plane equation at the point.
+    /// </summary>
+    /// <param name="p">evaulation point.</param>
+    /// <returns>returns pe[0]*p.X + pe[1]*p.Y + pe[2]*p.Z + pe[3] where
+    /// pe[0], pe[1], pe[2] and pe[3] are the coeeficients of the plane equation.
+    /// 
+    /// </returns>
+    public double ValueAt(Point3d p)
+    {
+      var pe = this.GetPlaneEquation();
+      return (pe[0]*p.X + pe[1]*p.Y + pe[2]*p.Z + pe[3]);
+    }
+
     /// <summary>
     /// Evaluate a point on the plane.
     /// </summary>
@@ -526,6 +541,11 @@ namespace Rhino.Geometry
     /// </summary>
     /// <param name="testPoint">Point to test.</param>
     /// <returns>Signed distance from this plane to testPoint.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_issurfaceinplane.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_issurfaceinplane.cs' lang='cs'/>
+    /// <code source='examples\py\ex_issurfaceinplane.py' lang='py'/>
+    /// </example>
     public double DistanceTo(Point3d testPoint)
     {
       return UnsafeNativeMethods.ON_Plane_DistanceTo(ref this, testPoint);
@@ -660,6 +680,20 @@ namespace Rhino.Geometry
     }
     #endregion
     #endregion
+
+    /// <summary>
+    /// Check that all values in other are within epsilon of the values in this
+    /// </summary>
+    /// <param name="other"></param>
+    /// <param name="epsilon"></param>
+    /// <returns></returns>
+    public bool EpsilonEquals(Plane other, double epsilon)
+    {
+      return m_origin.EpsilonEquals(other.m_origin, epsilon) &&
+             m_xaxis.EpsilonEquals(other.m_xaxis, epsilon) &&
+             m_yaxis.EpsilonEquals(other.m_yaxis, epsilon) &&
+             m_zaxis.EpsilonEquals(other.m_zaxis, epsilon);
+    }
   }
 
   //  public class ON_ClippingPlaneInfo { }

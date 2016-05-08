@@ -237,6 +237,11 @@ namespace Rhino.Geometry.Intersect
     /// If <see cref="LineCircleIntersection.Single"/> is returned, only t1 and point1 will have valid values. 
     /// If <see cref="LineCircleIntersection.Multiple"/> is returned, t2 and point2 will also be filled out.
     /// </returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_intersectlinecircle.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_intersectlinecircle.cs' lang='cs'/>
+    /// <code source='examples\py\ex_intersectlinecircle.py' lang='py'/>
+    /// </example>
     public static LineCircleIntersection LineCircle(Line line, Circle circle, out double t1, out Point3d point1, out double t2, out Point3d point2)
     {
       t1 = 0.0;
@@ -356,6 +361,7 @@ namespace Rhino.Geometry.Intersect
     #endregion
 
     #region sections
+#if RHINO_SDK
     /// <summary>
     /// Intersects a curve with an (infinite) plane.
     /// </summary>
@@ -368,22 +374,12 @@ namespace Rhino.Geometry.Intersect
       if (!plane.IsValid)
         return null;
 
-#if USING_V5_SDK
       // Use dedicated plane intersector in Rhino5
       IntPtr pConstCurve = curve.ConstPointer();
       IntPtr pIntersectArray = UnsafeNativeMethods.ON_Curve_IntersectPlane(pConstCurve, ref plane, tolerance);
       return CurveIntersections.Create(pIntersectArray);
-#else
-      PlaneSurface section = ExtendThroughBox(plane, curve.GetBoundingBox(false), 1.0); //should this be 1.0 or 100.0*tolerance?
-      if (section == null)
-        return null;
-      CurveIntersections rc = CurveSurface(curve, section, tolerance, 5 * tolerance);
-      section.Dispose();
-      return rc;
-#endif
     }
 
-#if RHINO_SDK
     /// <summary>
     /// Intersects a mesh with an (infinite) plane.
     /// </summary>
@@ -509,6 +505,7 @@ namespace Rhino.Geometry.Intersect
     #endregion
 
     #region geometric
+#if RHINO_SDK
     /// <summary>
     /// Finds the places where a curve intersects itself. 
     /// </summary>
@@ -552,6 +549,11 @@ namespace Rhino.Geometry.Intersect
     /// an intersection is assumed.</param>
     /// <param name="overlapTolerance">The tolerance with which the curves are tested.</param>
     /// <returns>A collection of intersection events.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_curvesurfaceintersect.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_curvesurfaceintersect.cs' lang='cs'/>
+    /// <code source='examples\py\ex_curvesurfaceintersect.py' lang='py'/>
+    /// </example>
     public static CurveIntersections CurveSurface(Curve curve, Surface surface, double tolerance, double overlapTolerance)
     {
       IntPtr pCurve = curve.ConstPointer();
@@ -585,7 +587,6 @@ namespace Rhino.Geometry.Intersect
       return CurveIntersections.Create(pIntersectArray);
     }
 
-#if RHINO_SDK
     /// <summary>
     /// Intersects a curve with a Brep. This function returns the 3D points of intersection
     /// and 3D overlap curves. If an error occurs while processing overlap curves, this function 
@@ -597,6 +598,11 @@ namespace Rhino.Geometry.Intersect
     /// <param name="overlapCurves">The overlap curves will be returned here.</param>
     /// <param name="intersectionPoints">The intersection points will be returned here.</param>
     /// <returns>true on success, false on failure.</returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_elevation.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_elevation.cs' lang='cs'/>
+    /// <code source='examples\py\ex_elevation.py' lang='py'/>
+    /// </example>
     public static bool CurveBrep(Curve curve, Brep brep, double tolerance, out Curve[] overlapCurves, out Point3d[] intersectionPoints)
     {
       overlapCurves = new Curve[0];
@@ -772,7 +778,6 @@ namespace Rhino.Geometry.Intersect
 
       return rc;
     }
-#endif
     
     /// <summary>
     /// Quickly intersects two meshes. Overlaps and near misses are ignored.
@@ -944,7 +949,7 @@ namespace Rhino.Geometry.Intersect
         return rc;
       }
     }
-
+#endif
     //public static Point3d[] RaySurfaces(Ray3d ray, IEnumerable<Surface> surfaces, int maxReflections)
     //{
     //  if (maxReflections < 1 || maxReflections > 1000)
@@ -981,19 +986,109 @@ namespace Rhino.Geometry.Intersect
       Point3d[] rc = null;
       if (meshes != null && points != null)
       {
-        Rhino.Runtime.InteropWrappers.SimpleArrayMeshPointer mesh_array = new Rhino.Runtime.InteropWrappers.SimpleArrayMeshPointer();
+        Runtime.InteropWrappers.SimpleArrayMeshPointer mesh_array = new Runtime.InteropWrappers.SimpleArrayMeshPointer();
         foreach (Mesh mesh in meshes)
           mesh_array.Add(mesh, true);
 
         Rhino.Collections.Point3dList inputpoints = new Rhino.Collections.Point3dList(points);
         if (inputpoints.Count > 0)
         {
-          IntPtr pConstMeshArray = mesh_array.ConstPointer();
+          IntPtr const_ptr_mesh_array = mesh_array.ConstPointer();
 
-          using (Rhino.Runtime.InteropWrappers.SimpleArrayPoint3d output = new Rhino.Runtime.InteropWrappers.SimpleArrayPoint3d())
+          using (Runtime.InteropWrappers.SimpleArrayPoint3d output = new Runtime.InteropWrappers.SimpleArrayPoint3d())
           {
-            IntPtr pOutput = output.NonConstPointer();
-            if (UnsafeNativeMethods.RHC_RhinoProjectPointsToMeshes(pConstMeshArray, direction, tolerance, inputpoints.Count, inputpoints.m_items, pOutput))
+            IntPtr ptr_output = output.NonConstPointer();
+            if (UnsafeNativeMethods.RHC_RhinoProjectPointsToMeshes(const_ptr_mesh_array, direction, tolerance, inputpoints.Count, inputpoints.m_items, ptr_output, IntPtr.Zero))
+              rc = output.ToArray();
+          }
+        }
+      }
+      return rc;
+    }
+
+    /// <summary>
+    /// Projects points onto meshes.
+    /// </summary>
+    /// <param name="meshes">the meshes to project on to.</param>
+    /// <param name="points">the points to project.</param>
+    /// <param name="direction">the direction to project.</param>
+    /// <param name="tolerance">
+    /// Projection tolerances used for culling close points and for line-mesh intersection.
+    /// </param>
+    /// <param name="indices">Return points[i] is a projection of points[indices[i]]</param>
+    /// <returns>
+    /// Array of projected points, or null in case of any error or invalid input.
+    /// </returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_projectpointstomeshesex.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_projectpointstomeshesex.cs' lang='cs'/>
+    /// <code source='examples\py\ex_projectpointstomeshesex.py' lang='py'/>
+    /// </example>
+    public static Point3d[] ProjectPointsToMeshesEx(IEnumerable<Mesh> meshes, IEnumerable<Point3d> points, Vector3d direction, double tolerance, out int[] indices)
+    {
+      Point3d[] rc = null;
+      indices = new int[0];
+      if (meshes != null && points != null)
+      {
+        Runtime.InteropWrappers.SimpleArrayMeshPointer mesh_array = new Runtime.InteropWrappers.SimpleArrayMeshPointer();
+        foreach (Mesh mesh in meshes)
+          mesh_array.Add(mesh, true);
+
+        Rhino.Collections.Point3dList inputpoints = new Rhino.Collections.Point3dList(points);
+        if (inputpoints.Count > 0)
+        {
+          IntPtr const_ptr_mesh_array = mesh_array.ConstPointer();
+
+          using (Runtime.InteropWrappers.SimpleArrayPoint3d output = new Runtime.InteropWrappers.SimpleArrayPoint3d())
+          using (Runtime.InteropWrappers.SimpleArrayInt output_indices = new Runtime.InteropWrappers.SimpleArrayInt())
+          {
+            IntPtr ptr_output = output.NonConstPointer();
+            IntPtr ptr_indices = output_indices.NonConstPointer();
+            if (UnsafeNativeMethods.RHC_RhinoProjectPointsToMeshes(const_ptr_mesh_array, direction, tolerance, inputpoints.Count, inputpoints.m_items, ptr_output, ptr_indices))
+            {
+              rc = output.ToArray();
+              indices = output_indices.ToArray();
+            }
+          }
+        }
+      }
+      return rc;
+    }
+
+
+    /// <summary>
+    /// Projects points onto breps.
+    /// </summary>
+    /// <param name="breps">The breps projection targets.</param>
+    /// <param name="points">The points to project.</param>
+    /// <param name="direction">The direction to project.</param>
+    /// <param name="tolerance">The tolerance used for intersections.</param>
+    /// <returns>
+    /// Array of projected points, or null in case of any error or invalid input.
+    /// </returns>
+    /// <example>
+    /// <code source='examples\vbnet\ex_projectpointstobreps.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_projectpointstobreps.cs' lang='cs'/>
+    /// <code source='examples\py\ex_projectpointstobreps.py' lang='py'/>
+    /// </example>
+    public static Point3d[] ProjectPointsToBreps(IEnumerable<Brep> breps, IEnumerable<Point3d> points, Vector3d direction, double tolerance)
+    {
+      Point3d[] rc = null;
+      if (breps != null && points != null)
+      {
+        Runtime.InteropWrappers.SimpleArrayBrepPointer brep_array = new Runtime.InteropWrappers.SimpleArrayBrepPointer();
+        foreach (Brep brep in breps)
+          brep_array.Add(brep, true);
+
+        Rhino.Collections.Point3dList inputpoints = new Rhino.Collections.Point3dList(points);
+        if (inputpoints.Count > 0)
+        {
+          IntPtr const_ptr_brep_array = brep_array.ConstPointer();
+
+          using (Runtime.InteropWrappers.SimpleArrayPoint3d output = new Runtime.InteropWrappers.SimpleArrayPoint3d())
+          {
+            IntPtr ptr_output_points = output.NonConstPointer();
+            if (UnsafeNativeMethods.RHC_RhinoProjectPointsToBreps(const_ptr_brep_array, direction, tolerance, inputpoints.Count, inputpoints.m_items, ptr_output_points, IntPtr.Zero))
               rc = output.ToArray();
           }
         }
@@ -1008,33 +1103,41 @@ namespace Rhino.Geometry.Intersect
     /// <param name="points">The points to project.</param>
     /// <param name="direction">The direction to project.</param>
     /// <param name="tolerance">The tolerance used for intersections.</param>
+    /// <param name="indices">Return points[i] is a projection of points[indices[i]]</param>
     /// <returns>
     /// Array of projected points, or null in case of any error or invalid input.
     /// </returns>
-    public static Point3d[] ProjectPointsToBreps(IEnumerable<Brep> breps, IEnumerable<Point3d> points, Vector3d direction, double tolerance)
+    public static Point3d[] ProjectPointsToBrepsEx(IEnumerable<Brep> breps, IEnumerable<Point3d> points, Vector3d direction, double tolerance, out int[] indices)
     {
       Point3d[] rc = null;
+      indices = new int[0];
       if (breps != null && points != null)
       {
-        Rhino.Runtime.InteropWrappers.SimpleArrayBrepPointer brep_array = new Rhino.Runtime.InteropWrappers.SimpleArrayBrepPointer();
+        Runtime.InteropWrappers.SimpleArrayBrepPointer brep_array = new Runtime.InteropWrappers.SimpleArrayBrepPointer();
         foreach (Brep brep in breps)
           brep_array.Add(brep, true);
 
         Rhino.Collections.Point3dList inputpoints = new Rhino.Collections.Point3dList(points);
         if (inputpoints.Count > 0)
         {
-          IntPtr pConstBrepArray = brep_array.ConstPointer();
+          IntPtr const_ptr_brep_array = brep_array.ConstPointer();
 
-          using (Runtime.InteropWrappers.SimpleArrayPoint3d output = new Rhino.Runtime.InteropWrappers.SimpleArrayPoint3d())
+          using (Runtime.InteropWrappers.SimpleArrayPoint3d output = new Runtime.InteropWrappers.SimpleArrayPoint3d())
+          using (Runtime.InteropWrappers.SimpleArrayInt output_indices = new Runtime.InteropWrappers.SimpleArrayInt())
           {
-            IntPtr pOutput = output.NonConstPointer();
-            if (UnsafeNativeMethods.RHC_RhinoProjectPointsToBreps(pConstBrepArray, direction, tolerance, inputpoints.Count, inputpoints.m_items, pOutput))
+            IntPtr ptr_output_points = output.NonConstPointer();
+            IntPtr ptr_indices = output_indices.NonConstPointer();
+            if (UnsafeNativeMethods.RHC_RhinoProjectPointsToBreps(const_ptr_brep_array, direction, tolerance, inputpoints.Count, inputpoints.m_items, ptr_output_points, ptr_indices))
+            {
               rc = output.ToArray();
+              indices = output_indices.ToArray();
+            }
           }
         }
       }
       return rc;
     }
+
 #endif
   }
 

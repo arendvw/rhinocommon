@@ -2,6 +2,9 @@
 using System;
 using System.Reflection;
 using System.Windows.Forms;
+#if RHINO_SDK
+using Rhino.Runtime.InteropWrappers;
+#endif
 
 // RMA_DONT_LOCALIZE (Tells the build process string parser to ignore this file)
 
@@ -124,7 +127,7 @@ namespace Rhino.UI
     /// <returns>The unit system name.</returns>
     public static string UnitSystemName(UnitSystem units, bool capitalize, bool singular, bool abbreviate)
     {
-      using (var sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.CRhinoApp_UnitSystemName((int)units, capitalize, singular, abbreviate, pString);
@@ -143,7 +146,7 @@ namespace Rhino.UI
     /// <returns>The formatted number.</returns>
     public static string FormatNumber( double x, UnitSystem units, DistanceDisplayMode mode, int precision, bool appendUnitSystemName )
     {
-      using (Rhino.Runtime.StringHolder sh = new Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.RHC_RhinoFormatNumber(x, (int)units, (int)mode, precision, appendUnitSystemName, pString);
@@ -176,7 +179,22 @@ namespace Rhino.UI
       Assembly assembly = GetAssemblyFromObject(assemblyOrObject);
       return LocalizationUtils.LocalizeString(assembly, CurrentLanguageID, english, contextId);
     }
-
+    /// <summary>
+    /// Look in the dialog item list for the specified key and return the translated
+    /// localized string if the key is found otherwise return the English string.
+    /// </summary>
+    /// <param name="assemblyOrObject">An assembly or an object from an assembly.</param>
+    /// <param name="key"></param>
+    /// <param name="english">The text in English.</param>
+    /// <returns>
+    /// Look in the dialog item list for the specified key and return the translated
+    /// localized string if the key is found otherwise return the English string.
+    /// </returns>
+    public static string LocalizeDialogItem(object assemblyOrObject, string key, string english)
+    {
+      Assembly assembly = GetAssemblyFromObject(assemblyOrObject);
+      return LocalizationUtils.LocalizeDialogItem(assembly, CurrentLanguageID, key, english);
+    }
     /// <summary>
     /// Check to see if the passed object is an assembly, if not then get the assembly that owns the object type.
     /// </summary>

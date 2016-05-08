@@ -1,26 +1,588 @@
+using System.Collections;
 #pragma warning disable 1591
 using System;
 using System.Runtime.Serialization;
 using System.Collections.Generic;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.DocObjects
 {
+  public class MaterialRef : IDisposable
+  {
+    #region Constructors
+    internal MaterialRef(IntPtr pointer, Guid plugInId)
+    {
+      m_temp_pointer = pointer;
+      PlugInId = plugInId;
+    }
+
+    internal MaterialRef(MaterialRefs parent, Guid plugInId)
+    {
+      m_parent = parent;
+      PlugInId = plugInId;
+    }
+    #endregion Constructors
+
+    #region Private properties
+    private readonly MaterialRefs m_parent;
+    private IntPtr m_temp_pointer = IntPtr.Zero;
+    #endregion Private properties
+
+    #region Internal/Private methods
+    internal IntPtr ConstPointer
+    {
+      get { return (m_temp_pointer == IntPtr.Zero ? m_parent.Parent.ConstPointer() : m_temp_pointer); }
+    }
+    private Guid GetMaterialId(bool backFace)
+    {
+      var pointer = ConstPointer;
+      var value = Guid.Empty;
+      UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialId(pointer, PlugInId, ref value, backFace);
+      return value;
+    }
+
+    private int GetMaterialIndex(bool backFace)
+    {
+      var pointer = ConstPointer;
+      var value = -1;
+      UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialIndex(pointer, PlugInId, ref value, backFace);
+      return value;
+    }
+    #endregion Internal/Private methods
+
+    #region Public properties
+    /// <summary>
+    /// Determines if the simple material should come from the object or from
+    /// it's layer.
+    /// </summary>
+    public ObjectMaterialSource MaterialSource
+    {
+      get
+      {
+        var pointer = ConstPointer;
+        var value = (int)ObjectMaterialSource.MaterialFromLayer;
+        UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRefSource(pointer, PlugInId, ref value);
+        switch (value)
+        {
+          case (int)ObjectMaterialSource.MaterialFromLayer:
+            return ObjectMaterialSource.MaterialFromLayer;
+          case (int)ObjectMaterialSource.MaterialFromObject:
+            return ObjectMaterialSource.MaterialFromObject;
+          case (int)ObjectMaterialSource.MaterialFromParent:
+            return ObjectMaterialSource.MaterialFromParent;
+        }
+        throw new Exception("Unknown ObjectMaterialSource type");
+      }
+    }
+
+    /// <summary>
+    /// Identifies a rendering plug-in
+    /// </summary>
+    public Guid PlugInId { get; private set; }
+    /// <summary>
+    /// The Id of the Material used to render the front of an object.
+    /// </summary>
+    public Guid FrontFaceMaterialId { get { return GetMaterialId(false); } }
+    /// <summary>
+    /// The Id of the Material used to render the back of an object.
+    /// </summary>
+    public Guid BackFaceMaterialId { get { return GetMaterialId(true); } }
+    /// <summary>
+    /// The index of the material used to render the front of an object
+    /// </summary>
+    public int FrontFaceMaterialIndex { get { return GetMaterialIndex(false); } }
+    /// <summary>
+    /// The index of the material used to render the back of an object
+    /// </summary>
+    public int BackFaceMaterialIndex { get { return GetMaterialIndex(true); } }
+    #endregion Public properties
+
+    #region IDisposable implementation
+    public void Dispose() { Dispose(true); }
+    ~MaterialRef() { Dispose(false); }
+    void Dispose(bool disposing)
+    {
+      if (m_temp_pointer == IntPtr.Zero) return;
+      UnsafeNativeMethods.ON_3dmObjectAttributes_Delete(m_temp_pointer);
+      m_temp_pointer = IntPtr.Zero;
+    }
+    #endregion IDisposable implementation
+  }
+
+  /// <summary>
+  /// Options passed to MaterialRefs.Create
+  /// </summary>
+  public class MaterialRefCreateParams
+  {
+    /// <summary>
+    /// Identifies a rendering plug-in
+    /// </summary>
+    public Guid PlugInId { get; set; }
+    /// <summary>
+    /// Determines if the simple material should come from the object or from
+    /// it's layer.
+    /// </summary>
+    public ObjectMaterialSource MaterialSource { get; set; }
+    /// <summary>
+    /// The Id of the Material used to render the front of an object.
+    /// </summary>
+    public Guid FrontFaceMaterialId { get; set; }
+    /// <summary>
+    /// The index of the material used to render the front of an object
+    /// </summary>
+    public int FrontFaceMaterialIndex { get; set; }
+    /// <summary>
+    /// The Id of the Material used to render the back of an object.
+    /// </summary>
+    public Guid BackFaceMaterialId { get; set; }
+    /// <summary>
+    /// The index of the material used to render the back of an object
+    /// </summary>
+    public int BackFaceMaterialIndex { get; set; }
+  }
+
+  /// <summary>
+  /// If you are developing a high quality plug-in renderer, and a user is
+  /// assigning a custom render material to this object, then add rendering
+  /// material information to the MaterialRefs dictionary.
+  /// 
+  /// Note to developers:
+  ///  As soon as the MaterialRefs dictionary contains items rendering
+  ///  material queries slow down.  Do not populate the MaterialRefs
+  /// dictionary when setting the MaterialIndex will take care of your needs.
+  /// </summary>
+  public class MaterialRefs : IDictionary<Guid, MaterialRef>
+  {
+    #region Constructors
+    internal MaterialRefs(ObjectAttributes parent)
+    {
+      Parent = parent;
+    }
+    #endregion
+
+    #region Internal properties and methods
+    internal ObjectAttributes Parent { get; private set; }
+
+    internal IntPtr ConstPointer
+    {
+      get { return Parent.ConstPointer(); }
+    }
+
+    internal IntPtr NonConstPointer
+    {
+      get { return Parent.NonConstPointer(); }
+    }
+    #endregion Internal properties and methods
+
+    /// <summary>
+    /// Call this method to create a MaterialRef which can be used when calling
+    /// one of the Add methods.
+    /// </summary>
+    /// <param name="createParams">
+    /// Values used to initialize the MaterialRef
+    /// </param>
+    /// <returns>
+    /// A temporary MaterialRef object, the caller is responsible for disposing
+    /// of this object.
+    /// </returns>
+    public MaterialRef Create(MaterialRefCreateParams createParams)
+    {
+      if (createParams == null) throw new ArgumentNullException("createParams");
+      if (createParams.PlugInId == Guid.Empty) throw new ArgumentException("The PlugInId property can not be empty", "createParams");
+      var attributes_pointer = UnsafeNativeMethods.ON_3dmObjectAttributes_New(IntPtr.Zero);
+      var pointer = UnsafeNativeMethods.ON_MaterialRef_New(attributes_pointer);
+      UnsafeNativeMethods.ON_MaterialRef_SetPlugInId(pointer, createParams.PlugInId);
+      UnsafeNativeMethods.ON_MaterialRef_SetMaterialSource(pointer, (int)createParams.MaterialSource);
+      UnsafeNativeMethods.ON_MaterialRef_SetMaterialId(pointer, createParams.FrontFaceMaterialId, true);
+      UnsafeNativeMethods.ON_MaterialRef_SetMaterialIndex(pointer, createParams.FrontFaceMaterialIndex, true);
+      UnsafeNativeMethods.ON_MaterialRef_SetMaterialId(pointer, createParams.BackFaceMaterialId, false);
+      UnsafeNativeMethods.ON_MaterialRef_SetMaterialIndex(pointer, createParams.BackFaceMaterialIndex, false);
+      UnsafeNativeMethods.ON_3dmObjectAttributes_AddMaterialRef(attributes_pointer, pointer);
+      UnsafeNativeMethods.ON_MaterialRef_Delete(pointer);
+      return new MaterialRef(attributes_pointer, createParams.PlugInId);
+    }
+
+    #region IDictionary implementation
+    // Summary:
+    //     Returns an enumerator that iterates through the collection.
+    //
+    // Returns:
+    //     A System.Collections.Generic.IEnumerator<T> that can be used to iterate through
+    //     the collection.
+
+    /// <summary>
+    /// Returns an enumerator that iterates through this dictionary.
+    /// </summary>
+    /// <returns>
+    /// A IEnumerator that can be used to iterate this dictionary.
+    /// </returns>
+    public IEnumerator<KeyValuePair<Guid, MaterialRef>> GetEnumerator()
+    {
+      var result = new MaterialRefDictionaryEnumerator(this);
+      return result;
+    }
+    /// <summary>
+    /// Returns an enumerator that iterates through this dictionary.
+    /// </summary>
+    /// <returns>
+    /// An System.Collections.IEnumerator object that can be used to iterate
+    /// through this dictionary.
+    /// </returns>
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+      return GetEnumerator();
+    }
+    /// <summary>
+    /// Adds an item to this dictionary.
+    /// </summary>
+    /// <param name="item">
+    /// The object to add to this dictionary
+    /// </param>
+    /// <exception cref="System.ArgumentNullException">
+    /// value is null.
+    /// </exception>
+    /// <exception cref="System.ArgumentException">
+    /// key is empty.
+    /// </exception>
+    public void Add(KeyValuePair<Guid, MaterialRef> item)
+    {
+      Add(item.Key, item.Value);
+    }
+    /// <summary>
+    /// Add or replace an element with the provided key and value to this dictionary.
+    /// </summary>
+    /// <param name="key">
+    /// The plug-in associated with this MaterialRef
+    /// </param>
+    /// <param name="value">
+    /// MaterialRef to add to this dictionary
+    /// </param>
+    /// <exception cref="System.ArgumentNullException">
+    /// value is null.
+    /// </exception>
+    /// <exception cref="System.ArgumentException">
+    /// key is empty.
+    /// </exception>
+    public void Add(Guid key, MaterialRef value)
+    {
+      if (key == Guid.Empty) throw new ArgumentException("key");
+      if (value == null) throw new ArgumentNullException("value");
+      var non_const_pointer = NonConstPointer;
+      var material_ref_attr_pointer = value.ConstPointer;
+      var material_ref_pointer = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRef(material_ref_attr_pointer, key);
+      UnsafeNativeMethods.ON_3dmObjectAttributes_AddMaterialRef(non_const_pointer, material_ref_pointer);
+    }
+    /// <summary>
+    /// Removes all items from this dictionary.
+    /// </summary>
+    public void Clear()
+    {
+      var non_const_pointer = NonConstPointer;
+      UnsafeNativeMethods.ON_3dmObjectAttributes_EmptyMaterialRefs(non_const_pointer);
+    }
+    /// <summary>
+    /// Determines whether this dictionary contains a specific value.
+    /// </summary>
+    /// <param name="item">
+    /// The object to locate in this dictionary.
+    /// </param>
+    /// <returns>
+    /// true if item is found in this dictionary; otherwise, false.
+    /// </returns>
+    public bool Contains(KeyValuePair<Guid, MaterialRef> item)
+    {
+      return ContainsKey(item.Key);
+    }
+    //
+    // Summary:
+    //     Copies the elements of the System.Collections.Generic.ICollection<T> to an
+    //     System.Array, starting at a particular System.Array index.
+    //
+    // Parameters:
+    //   array:
+    //     The one-dimensional System.Array that is the destination of the elements
+    //     copied from System.Collections.Generic.ICollection<T>. The System.Array must
+    //     have zero-based indexing.
+    //
+    //   arrayIndex:
+    //     The zero-based index in array at which copying begins.
+    //
+    // Exceptions:
+    //   System.ArgumentNullException:
+    //     array is null.
+    //
+    //   System.ArgumentOutOfRangeException:
+    //     arrayIndex is less than 0.
+    //
+    //   System.ArgumentException:
+    //     The number of elements in the source System.Collections.Generic.ICollection<T>
+    //     is greater than the available space from arrayIndex to the end of the destination
+    //     array.
+    /// <summary>
+    /// Copies the elements of this dictionary to an System.Array, starting at
+    /// a particular System.Array index.
+    /// </summary>
+    /// <param name="array">
+    /// The one-dimensional System.Array that is the destination of the
+    /// elements copied from this dictionary. The System.Array must have
+    /// zero-based indexing.
+    /// </param>
+    /// <param name="arrayIndex">
+    /// The zero-based index in array at which copying begins.
+    /// </param>
+    /// <exception cref="System.ArgumentNullException">
+    /// array is null
+    /// </exception>
+    /// <exception cref="System.ArgumentOutOfRangeException">
+    /// arrayIndex is less than 0.
+    /// </exception>
+    /// <exception cref="System.ArgumentOutOfRangeException">
+    /// The number of elements in the source dictionary is greater than the
+    /// available space from arrayIndex to the end of the destination array.
+    /// </exception>
+    public void CopyTo(KeyValuePair<Guid, MaterialRef>[] array, int arrayIndex)
+    {
+      if (array == null) throw new ArgumentNullException("array");
+      if (arrayIndex < 0) throw new ArgumentOutOfRangeException("arrayIndex");
+      var length = Count - arrayIndex;
+      if (array.Length < length) throw new ArgumentException("The number of elements in the MaterialRefs is greater than the available space from arrayIndex to the end of the destination array.", "array");
+      var const_pointer = ConstPointer;
+      for (var i = arrayIndex; i < Count; i++)
+      {
+        var pointer = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialFromIndex(const_pointer, i);
+        var id = Guid.Empty;
+        UnsafeNativeMethods.ON_MaterialRef_PlugInId(pointer, ref id);
+        array[i] = new KeyValuePair<Guid, MaterialRef>(id, new MaterialRef(this, id));
+      }
+    }
+    /// <summary>
+    /// Removes the element with the specified plug-in id from the this dictionary.
+    /// </summary>
+    /// <param name="item">
+    /// The object to remove from this dictionary
+    /// </param>
+    /// <returns></returns>
+    public bool Remove(KeyValuePair<Guid, MaterialRef> item)
+    {
+      var const_pointer = ConstPointer;
+      var index = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRefIndexOf(const_pointer, item.Key);
+      if (index < 0) return false;
+      var non_const_pointer = NonConstPointer;
+      UnsafeNativeMethods.ON_3dmObjectAttributes_RemoveMaterialRefAt(non_const_pointer, index);
+      return true;
+    }
+    /// <summary>
+    /// Gets the number of elements contained in this dictionary
+    /// </summary>
+    public int Count
+    {
+      get
+      {
+        var const_pointer = ConstPointer;
+        var value = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRefCount(const_pointer);
+        return value;
+      }
+    }
+    /// <summary>
+    /// IDictionary required property, always returns false for this dictionary.
+    /// </summary>
+    public bool IsReadOnly { get { return false; } }
+    /// <summary>
+    /// Determines whether this dictionary contains an MaterialRef with the
+    /// specified plug-in id.
+    /// </summary>
+    /// <param name="key">
+    /// The plug-in Id used to locate a MaterialRef in this dictionary.
+    /// </param>
+    /// <returns>
+    /// true if this dictionary contains an element with the specified plug-in
+    /// Id; otherwise, false.
+    /// </returns>
+    public bool ContainsKey(Guid key)
+    {
+      var const_pointer = ConstPointer;
+      var index = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRefIndexOf(const_pointer, key);
+      return (index >= 0);
+    }
+    /// <summary>
+    /// Removes the MaterialRef with the specified plug-in Id from this
+    /// dictionary.
+    /// </summary>
+    /// <param name="key">
+    /// The plug-in Id for the MaterialRef to remove.
+    /// </param>
+    /// <returns>
+    /// true if the MaterialRef is successfully removed; otherwise, false. This
+    /// method also returns false if key was not found in the original dictionary.
+    /// </returns>
+    public bool Remove(Guid key)
+    {
+      var const_pointer = ConstPointer;
+      var index = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRefIndexOf(const_pointer, key);
+      if (index < 0) return false;
+      var non_const_pointer = NonConstPointer;
+      UnsafeNativeMethods.ON_3dmObjectAttributes_RemoveMaterialRefAt(non_const_pointer, index);
+      return true;
+    }
+    /// <summary>
+    /// Gets the value associated with the specified key.
+    /// </summary>
+    /// <param name="key">
+    /// The plug-in Id whose MaterialRef to get.
+    /// </param>
+    /// <param name="value">
+    /// When this method returns, the MaterialRef associated with the specified
+    /// key, if the key is found; otherwise, null. This parameter is passed
+    /// uninitialized.
+    /// </param>
+    /// <returns>
+    /// true if this dictionary contains a MaterialRef with the specified key;
+    /// otherwise, false.
+    /// </returns>
+    public bool TryGetValue(Guid key, out MaterialRef value)
+    {
+      var contains_key = ContainsKey(key);
+      value = (contains_key ? new MaterialRef(this, key) : null);
+      return contains_key;
+    }
+    /// <summary>
+    /// Gets or sets the element with the specified plug-in Id.
+    /// </summary>
+    /// <param name="key">
+    /// The plug-in Id of the MaterialRef to get or set.
+    /// </param>
+    /// <returns>
+    /// The MaterialRef with the specified key.
+    /// </returns>
+    /// <exception cref="System.ArgumentNullException">
+    /// value is null.
+    /// </exception>
+    /// <exception cref="System.ArgumentException">
+    /// key is empty.
+    /// </exception>
+    public MaterialRef this[Guid key]
+    {
+      get
+      {
+        if (key == Guid.Empty) throw new ArgumentException("key");
+        if (!ContainsKey(key)) throw new KeyNotFoundException();
+        return new MaterialRef(this, key);
+      }
+      set
+      {
+        Add(key, value);
+      }
+    }
+    /// <summary>
+    /// Gets an ICollection containing the plug-in Id's in this dictionary.
+    /// </summary>
+    public ICollection<Guid> Keys
+    {
+      get
+      {
+        var keys = new List<Guid>();
+        var const_pointer = ConstPointer;
+        for (int i = 0, count = Count; i < count; i++)
+        {
+          var pointer = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialFromIndex(const_pointer, i);
+          if (pointer == IntPtr.Zero) continue;
+          var id = Guid.Empty;
+          if (UnsafeNativeMethods.ON_MaterialRef_PlugInId(pointer, ref id) && id != Guid.Empty)
+            keys.Add(id);
+        }
+        return keys;
+      }
+    }
+    /// <summary>
+    /// Gets an ICollection containing the MaterialRef objects in this
+    /// dictionary.
+    /// </summary>
+    public ICollection<MaterialRef> Values
+    {
+      get
+      {
+        var keys = new List<MaterialRef>();
+        var const_pointer = ConstPointer;
+        for (int i = 0, count = Count; i < count; i++)
+        {
+          var pointer = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialFromIndex(const_pointer, i);
+          if (pointer == IntPtr.Zero) continue;
+          var id = Guid.Empty;
+          if (UnsafeNativeMethods.ON_MaterialRef_PlugInId(pointer, ref id) && id != Guid.Empty)
+            keys.Add(new MaterialRef(this, id));
+        }
+        return keys;
+      }
+    }
+    #endregion IDictionary implementation
+  }
+  internal class MaterialRefDictionaryEnumerator : IEnumerator<KeyValuePair<Guid,MaterialRef>>
+  {
+    internal MaterialRefDictionaryEnumerator(MaterialRefs parent)
+    {
+      m_parent = parent;
+      var pointer = m_parent.ConstPointer;
+      m_count = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialRefCount(pointer);
+    }
+    private readonly MaterialRefs m_parent;
+    private int m_index = -1;
+    private readonly int m_count;
+
+    public void Dispose()
+    {
+    }
+
+    public bool MoveNext()
+    {
+      if (m_index < m_count) m_index++;
+      if (m_index >= m_count)
+      {
+        Current = new KeyValuePair<Guid, MaterialRef>(Guid.Empty, null);
+        return false;
+      }
+      var pointer = m_parent.ConstPointer;
+      var ref_pointer = UnsafeNativeMethods.ON_3dmObjectAttributes_MaterialFromIndex(pointer, m_index);
+      var id = Guid.Empty;
+      UnsafeNativeMethods.ON_MaterialRef_PlugInId(ref_pointer, ref id);
+      Current = new KeyValuePair<Guid,MaterialRef>(id, new MaterialRef(m_parent, id));
+      return true;
+    }
+
+    public void Reset()
+    {
+      m_index = -1;
+      Current = new KeyValuePair<Guid, MaterialRef>(Guid.Empty, null);
+    }
+
+    public KeyValuePair<Guid,MaterialRef> Current { get; private set; }
+
+    object IEnumerator.Current
+    {
+      get { return Current; }
+    }
+  }
   class MaterialHolder
   {
-    IntPtr m_pConstMaterial;
-    public MaterialHolder(IntPtr pConstMaterial)
+    IntPtr m_ptr_const_material;
+    readonly bool m_is_opennurbs_material;
+
+    public MaterialHolder(IntPtr pConstMaterial, bool isOpenNurbsMaterial)
     {
-      m_pConstMaterial = pConstMaterial;
+      m_ptr_const_material = pConstMaterial;
+      m_is_opennurbs_material = isOpenNurbsMaterial;
     }
     public void Done()
     {
-      m_pConstMaterial = IntPtr.Zero;
+      m_ptr_const_material = IntPtr.Zero;
     }
     public IntPtr ConstMaterialPointer()
     {
-      return m_pConstMaterial;
+      return m_ptr_const_material;
     }
-
+    public bool IsOpenNurbsMaterial
+    {
+      get { return m_is_opennurbs_material; }
+    }
     Material m_cached_material;
     public Material GetMaterial()
     {
@@ -29,7 +591,7 @@ namespace Rhino.DocObjects
   }
 
   [Serializable]
-  public class Material : Rhino.Runtime.CommonObject
+  public class Material : Runtime.CommonObject
   {
     #region members
     // Represents both a CRhinoMaterial and an ON_Material. When m_ptr is
@@ -39,7 +601,7 @@ namespace Rhino.DocObjects
 #if RHINO_SDK
     readonly RhinoDoc m_doc;
     bool m_is_default;
-    static Material m_default_material;
+    static Material g_default_material;
 #endif
     #endregion
 
@@ -47,8 +609,8 @@ namespace Rhino.DocObjects
     public Material()
     {
       // Creates a new non-document control ON_Material
-      IntPtr pMaterial = UnsafeNativeMethods.ON_Material_New(IntPtr.Zero);
-      ConstructNonConstObject(pMaterial);
+      IntPtr ptr_material = UnsafeNativeMethods.ON_Material_New(IntPtr.Zero);
+      ConstructNonConstObject(ptr_material);
     }
 #if RHINO_SDK
     internal Material(int index, RhinoDoc doc)
@@ -62,17 +624,17 @@ namespace Rhino.DocObjects
     {
       get
       {
-        if (m_default_material == null || !m_default_material.IsDocumentControlled)
-          m_default_material = new Material(true);
-        return m_default_material;
+        if (g_default_material == null || !g_default_material.IsDocumentControlled)
+          g_default_material = new Material(true);
+        return g_default_material;
       }
     }
 
     Material(bool defaultMaterial)
     {
-      IntPtr pConstThis = UnsafeNativeMethods.CRhinoMaterial_DefaultMaterial();
+      IntPtr ptr_const_material = UnsafeNativeMethods.CRhinoMaterial_DefaultMaterial();
       m_is_default = true;
-      m_id = UnsafeNativeMethods.ON_Material_ModelObjectId(pConstThis);
+      m_id = UnsafeNativeMethods.ON_Material_ModelObjectId(ptr_const_material);
       m_doc = null;
       m__parent = null;
     }
@@ -80,11 +642,11 @@ namespace Rhino.DocObjects
 
     // This is for temporary wrappers. You should always call
     // ReleaseNonConstPointer after you are done using this material
-    internal static Material NewTemporaryMaterial(IntPtr pON_Material)
+    internal static Material NewTemporaryMaterial(IntPtr pOpennurbsMaterial)
     {
-      if (IntPtr.Zero == pON_Material)
+      if (IntPtr.Zero == pOpennurbsMaterial)
         return null;
-      Material rc = new Material(pON_Material);
+      Material rc = new Material(pOpennurbsMaterial);
       rc.DoNotDestructOnDispose();
       return rc;
     }
@@ -98,7 +660,7 @@ namespace Rhino.DocObjects
       ConstructConstObject(holder, -1);
     }
 
-    internal Material(Guid id, Rhino.FileIO.File3dm parent)
+    internal Material(Guid id, FileIO.File3dm parent)
     {
       m_id = id;
       m__parent = parent;
@@ -122,18 +684,18 @@ namespace Rhino.DocObjects
       if (m_doc != null)
         return UnsafeNativeMethods.CRhinoMaterialTable_GetMaterialPointer(m_doc.m_docId, m_id);
 #endif
-      Rhino.FileIO.File3dm parent_file = m__parent as Rhino.FileIO.File3dm;
+      FileIO.File3dm parent_file = m__parent as FileIO.File3dm;
       if (parent_file != null)
       {
-        IntPtr pModel = parent_file.ConstPointer();
-        return UnsafeNativeMethods.ONX_Model_GetMaterialPointer(pModel, m_id);
+        IntPtr ptr_model = parent_file.ConstPointer();
+        return UnsafeNativeMethods.ONX_Model_GetMaterialPointer(ptr_model, m_id);
       }
       return IntPtr.Zero;
     }
 
     internal override IntPtr NonConstPointer()
     {
-      if (m__parent is Rhino.FileIO.File3dm)
+      if (m__parent is FileIO.File3dm)
         return _InternalGetConstPointer();
 
       return base.NonConstPointer();
@@ -142,8 +704,8 @@ namespace Rhino.DocObjects
     internal override IntPtr _InternalDuplicate(out bool applymempressure)
     {
       applymempressure = false;
-      IntPtr pConstPointer = ConstPointer();
-      return UnsafeNativeMethods.ON_Object_Duplicate(pConstPointer);
+      IntPtr ptr_const_this = ConstPointer();
+      return UnsafeNativeMethods.ON_Object_Duplicate(ptr_const_this);
     }
     protected override void OnSwitchToNonConst()
     {
@@ -153,11 +715,12 @@ namespace Rhino.DocObjects
       base.OnSwitchToNonConst();
     }
     #region properties
-    const int idxIsDeleted = 0;
-    const int idxIsReference = 1;
+    const int IDX_IS_DELETED = 0;
+    const int IDX_IS_REFERENCE = 1;
     //const int idxIsModified = 2;
-    const int idxIsDefaultMaterial = 3;
+    const int IDX_IS_DEFAULT_MATERIAL = 3;
 
+#if RHINO_SDK
     /// <summary>
     /// Deleted materials are kept in the runtime material table so that undo
     /// will work with materials.  Call IsDeleted to determine to determine if
@@ -169,18 +732,19 @@ namespace Rhino.DocObjects
       {
         if (!IsDocumentControlled)
           return false;
-        IntPtr pConstThis = ConstPointer();
-        return UnsafeNativeMethods.CRhinoMaterial_GetBool(pConstThis, idxIsDeleted);
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoMaterial_GetBool(ptr_const_this, IDX_IS_DELETED);
       }
     }
+#endif
 
     /// <summary>Gets or sets the ID of this material.</summary>
     public Guid Id
     {
       get
       {
-        IntPtr pMaterial = ConstPointer();
-        return UnsafeNativeMethods.ON_Material_ModelObjectId(pMaterial);
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.ON_Material_ModelObjectId(ptr_const_this);
       }
     }
 
@@ -191,16 +755,17 @@ namespace Rhino.DocObjects
     {
       get
       {
-        IntPtr pMaterial = ConstPointer();
-        return UnsafeNativeMethods.ON_Material_PlugInId(pMaterial);
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.ON_Material_PlugInId(ptr_const_this);
       }
       set
       {
-        IntPtr pMaterial = NonConstPointer();
-        UnsafeNativeMethods.ON_Material_SetPlugInId(pMaterial, value);
+        IntPtr ptr_this = NonConstPointer();
+        UnsafeNativeMethods.ON_Material_SetPlugInId(ptr_this, value);
       }
     }
 
+#if RHINO_SDK
     /// <summary>
     /// Rhino allows multiple files to be viewed simultaneously. Materials in the
     /// document are "normal" or "reference". Reference materials are not saved.
@@ -211,8 +776,8 @@ namespace Rhino.DocObjects
       {
         if (!IsDocumentControlled)
           return false;
-        IntPtr pConstThis = ConstPointer();
-        return UnsafeNativeMethods.CRhinoMaterial_GetBool(pConstThis, idxIsReference);
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoMaterial_GetBool(ptr_const_this, IDX_IS_REFERENCE);
       }
     }
 
@@ -221,6 +786,7 @@ namespace Rhino.DocObjects
     //{
     //  get { return UnsafeNativeMethods.CRhinoMaterial_GetBool(m_doc.m_docId, m_index, idxIsModified); }
     //}
+#endif
 
     /// <summary>
     /// By default Rhino layers and objects are assigned the default rendering material.
@@ -231,11 +797,28 @@ namespace Rhino.DocObjects
       {
         if (!IsDocumentControlled)
           return false;
-        IntPtr pConstThis = ConstPointer();
-        return UnsafeNativeMethods.CRhinoMaterial_GetBool(pConstThis, idxIsDefaultMaterial);
+#if RHINO_SDK
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoMaterial_GetBool(ptr_const_this, IDX_IS_DEFAULT_MATERIAL);
+#else
+        return MaterialIndex == -1;
+#endif
       }
     }
 
+    /// <summary>
+    /// 
+    /// </summary>
+    public int MaterialIndex
+    {
+      get
+      {
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.ON_Material_Index(ptr_const_this);
+      }
+    }
+
+#if RHINO_SDK
     /// <summary>
     /// Number of objects and layers that use this material.
     /// </summary>
@@ -245,45 +828,63 @@ namespace Rhino.DocObjects
       {
         if (!IsDocumentControlled)
           return 0;
-        IntPtr pConstThis = ConstPointer();
-        return UnsafeNativeMethods.CRhinoMaterial_InUse(pConstThis);
+        IntPtr ptr_const_this = ConstPointer();
+        return UnsafeNativeMethods.CRhinoMaterial_InUse(ptr_const_this);
       }
     }
+
+    /// <summary>
+    /// If true this object may not be modified. Any properties or functions that attempt
+    /// to modify this object when it is set to "IsReadOnly" will throw a NotSupportedException.
+    /// </summary>
+    public override bool IsDocumentControlled
+    {
+      get
+      {
+        MaterialHolder mh = m__parent as MaterialHolder;
+        if (mh != null && mh.IsOpenNurbsMaterial)
+          return false;
+        return base.IsDocumentControlled;
+      }
+    }
+
+#endif
 
     public string Name
     {
       get
       {
-        IntPtr pConstThis = ConstPointer();
-        if (IntPtr.Zero == pConstThis)
+        IntPtr ptr_const_this = ConstPointer();
+        if (IntPtr.Zero == ptr_const_this)
           return String.Empty;
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+        using (var sh = new StringHolder())
         {
-          IntPtr pString = sh.NonConstPointer();
-          UnsafeNativeMethods.ON_Material_GetName(pConstThis, pString);
+          IntPtr ptr_string = sh.NonConstPointer();
+          UnsafeNativeMethods.ON_Material_GetName(ptr_const_this, ptr_string);
           return sh.ToString();
         }
       }
       set
       {
-        IntPtr pThis = NonConstPointer();
-        UnsafeNativeMethods.ON_Material_SetName(pThis, value);
+        IntPtr ptr_this = NonConstPointer();
+        UnsafeNativeMethods.ON_Material_SetName(ptr_this, value);
       }
     }
 
-    const int idxShine = 0;
-    const int idxTransparency = 1;
-    const int idxIOR = 2;
+    const int IDX_SHINE = 0;
+    const int IDX_TRANSPARENCY = 1;
+    const int IDX_IOR = 2;
+    const int idxReflectivity = 3;
 
     double GetDouble(int which)
     {
-      IntPtr pConstThis = ConstPointer();
-      return UnsafeNativeMethods.ON_Material_GetDouble(pConstThis, which);
+      IntPtr ptr_const_this = ConstPointer();
+      return UnsafeNativeMethods.ON_Material_GetDouble(ptr_const_this, which);
     }
     void SetDouble(int which, double val)
     {
-      IntPtr pThis = NonConstPointer();
-      UnsafeNativeMethods.ON_Material_SetDouble(pThis, which, val);
+      IntPtr ptr_this = NonConstPointer();
+      UnsafeNativeMethods.ON_Material_SetDouble(ptr_this, which, val);
     }
 
     public static double MaxShine
@@ -296,8 +897,8 @@ namespace Rhino.DocObjects
     /// </summary>
     public double Shine
     {
-      get { return GetDouble(idxShine); }
-      set { SetDouble(idxShine, value); }
+      get { return GetDouble(IDX_SHINE); }
+      set { SetDouble(IDX_SHINE, value); }
     }
 
     /// <summary>
@@ -305,8 +906,8 @@ namespace Rhino.DocObjects
     /// </summary>
     public double Transparency
     {
-      get { return GetDouble(idxTransparency); }
-      set { SetDouble(idxTransparency, value); }
+      get { return GetDouble(IDX_TRANSPARENCY); }
+      set { SetDouble(IDX_TRANSPARENCY, value); }
     }
 
     /// <summary>
@@ -315,58 +916,68 @@ namespace Rhino.DocObjects
     /// </summary>
     public double IndexOfRefraction
     {
-      get { return GetDouble(idxIOR); }
-      set { SetDouble(idxIOR, value); }
+      get { return GetDouble(IDX_IOR); }
+      set { SetDouble(IDX_IOR, value); }
     }
 
-    const int idxDiffuse = 0;
-    const int idxAmbient = 1;
-    const int idxEmission = 2;
-    const int idxSpecular = 3;
-    const int idxReflection = 4;
-    const int idxTransparent = 5;
+    /// <summary>
+    /// Gets or sets how reflective a material is, 0f is no reflection
+    /// 1f is 100% reflective.
+    /// </summary>
+    public double Reflectivity
+    {
+      get { return GetDouble(idxReflectivity); }
+      set { SetDouble(idxReflectivity, value); }
+    }
+
+    const int IDX_DIFFUSE = 0;
+    const int IDX_AMBIENT = 1;
+    const int IDX_EMISSION = 2;
+    const int IDX_SPECULAR = 3;
+    const int IDX_REFLECTION = 4;
+    const int IDX_TRANSPARENT = 5;
     System.Drawing.Color GetColor(int which)
     {
-      IntPtr pConstThis = ConstPointer();
-      int abgr = UnsafeNativeMethods.ON_Material_GetColor(pConstThis, which);
-      return System.Drawing.ColorTranslator.FromWin32(abgr);
+      IntPtr ptr_const_this = ConstPointer();
+      int abgr = UnsafeNativeMethods.ON_Material_GetColor(ptr_const_this, which);
+      return Runtime.Interop.ColorFromWin32(abgr);
     }
     void SetColor(int which, System.Drawing.Color c)
     {
-      IntPtr pThis = NonConstPointer();
+      IntPtr ptr_this = NonConstPointer();
       int argb = c.ToArgb();
-      UnsafeNativeMethods.ON_Material_SetColor(pThis, which, argb);
+      UnsafeNativeMethods.ON_Material_SetColor(ptr_this, which, argb);
     }
 
     public System.Drawing.Color DiffuseColor
     {
-      get{ return GetColor(idxDiffuse); }
-      set{ SetColor(idxDiffuse, value); }
+      get{ return GetColor(IDX_DIFFUSE); }
+      set{ SetColor(IDX_DIFFUSE, value); }
     }
     public System.Drawing.Color AmbientColor
     {
-      get { return GetColor(idxAmbient); }
-      set { SetColor(idxAmbient, value); }
+      get { return GetColor(IDX_AMBIENT); }
+      set { SetColor(IDX_AMBIENT, value); }
     }
     public System.Drawing.Color EmissionColor
     {
-      get { return GetColor(idxEmission); }
-      set { SetColor(idxEmission, value); }
+      get { return GetColor(IDX_EMISSION); }
+      set { SetColor(IDX_EMISSION, value); }
     }
     public System.Drawing.Color SpecularColor
     {
-      get { return GetColor(idxSpecular); }
-      set { SetColor(idxSpecular, value); }
+      get { return GetColor(IDX_SPECULAR); }
+      set { SetColor(IDX_SPECULAR, value); }
     }
     public System.Drawing.Color ReflectionColor
     {
-      get { return GetColor(idxReflection); }
-      set { SetColor(idxReflection, value); }
+      get { return GetColor(IDX_REFLECTION); }
+      set { SetColor(IDX_REFLECTION, value); }
     }
     public System.Drawing.Color TransparentColor
     {
-      get { return GetColor(idxTransparent); }
-      set { SetColor(idxTransparent, value); }
+      get { return GetColor(IDX_TRANSPARENT); }
+      set { SetColor(IDX_TRANSPARENT, value); }
     }
     #endregion
 
@@ -375,8 +986,8 @@ namespace Rhino.DocObjects
     /// </summary>
     public void Default()
     {
-      IntPtr pConstThis = NonConstPointer();
-      UnsafeNativeMethods.ON_Material_Default(pConstThis);
+      IntPtr ptr_const_this = NonConstPointer();
+      UnsafeNativeMethods.ON_Material_Default(ptr_const_this);
     }
 
     internal const int idxBitmapTexture = 0;
@@ -385,38 +996,56 @@ namespace Rhino.DocObjects
     internal const int idxTransparencyTexture = 3;
     bool AddTexture(string filename, int which)
     {
-      IntPtr pThis = NonConstPointer();
-      return UnsafeNativeMethods.ON_Material_AddTexture(pThis, filename, which);
+      IntPtr ptr_this = NonConstPointer();
+      return UnsafeNativeMethods.ON_Material_AddTexture(ptr_this, filename, which);
     }
     bool SetTexture(Texture texture, int which)
     {
-      IntPtr pThis = NonConstPointer();
-      IntPtr pTexture = texture.ConstPointer();
-      return UnsafeNativeMethods.ON_Material_SetTexture(pThis, pTexture, which);
+      IntPtr ptr_this = NonConstPointer();
+      IntPtr ptr_const_texture = texture.ConstPointer();
+      return UnsafeNativeMethods.ON_Material_SetTexture(ptr_this, ptr_const_texture, which);
     }
     Texture GetTexture(int which)
     {
-      IntPtr pConstThis = ConstPointer();
-      int index = UnsafeNativeMethods.ON_Material_GetTexture(pConstThis, which);
+      IntPtr ptr_const_this = ConstPointer();
+      int index = UnsafeNativeMethods.ON_Material_GetTexture(ptr_const_this, which);
       if (index >= 0)
         return new Texture(index, this);
       return null;
     }
 
-#if TODO_RDK_UNCHECKED
-    Rhino.Render.RenderMaterial RenderMaterial
+// This is Private and never called so do we really need it?
+//#if RDK_UNCHECKED
+//    Render.RenderMaterial RenderMaterial
+//    {
+//      get
+//      {
+//        var pointer = ConstPointer();
+//        var instance_id = UnsafeNativeMethods.Rdk_MaterialFromOnMaterial(pointer);
+//        return Render.RenderContent.FromId(m_doc, instance_id) as Render.RenderMaterial;
+//      }
+//      set
+//      {
+//        var pointer = NonConstPointer();
+//        var id = (value == null ? Guid.Empty : value.Id);
+//        UnsafeNativeMethods.Rdk_SetMaterialToOnMaterial(pointer, id);
+//      }
+//    }
+//#endif
+
+    /// <summary>
+    /// Get array of textures that this material uses
+    /// </summary>
+    /// <returns></returns>
+    public Texture[] GetTextures()
     {
-        get
-        {
-            Guid instanceId = UnsafeNativeMethods.Rdk_MaterialFromOnMaterial(ConstPointer());
-            return new Rhino.Render.RenderMaterial(instanceId);
-        }
-        set
-        {
-            UnsafeNativeMethods.Rdk_SetMaterialToOnMaterial(NonConstPointer(), value.Id);
-        }
+      IntPtr ptr_const_this = ConstPointer();
+      int count = UnsafeNativeMethods.ON_Material_GetTextureCount(ptr_const_this);
+      Texture[] rc = new Texture[count];
+      for (int i = 0; i < count; i++)
+        rc[i] = new Texture(i, this);
+      return rc;
     }
-#endif
 
     #region Bitmap
     public Texture GetBitmapTexture()
@@ -487,8 +1116,8 @@ namespace Rhino.DocObjects
 #if RHINO_SDK
       if (m_id == Guid.Empty || IsDocumentControlled)
         return false;
-      IntPtr pThis = NonConstPointer();
-      return UnsafeNativeMethods.CRhinoMaterialTable_CommitChanges(m_doc.m_docId, pThis, m_id);
+      IntPtr ptr_this = NonConstPointer();
+      return UnsafeNativeMethods.CRhinoMaterialTable_CommitChanges(m_doc.m_docId, ptr_this, m_id);
 #else
       return true;
 #endif
@@ -551,29 +1180,29 @@ namespace Rhino.DocObjects.Tables
 
   public class MaterialTableEventArgs : EventArgs
   {
-    readonly int m_docId;
+    readonly int m_document_id;
     readonly MaterialTableEventType m_event_type;
     readonly int m_material_index;
     readonly MaterialHolder m_holder;
 
-    internal MaterialTableEventArgs(int docId, int event_type, int index, IntPtr pOldSettings)
+    internal MaterialTableEventArgs(int docId, int eventType, int index, IntPtr pOldSettings)
     {
-      m_docId = docId;
-      m_event_type = (MaterialTableEventType)event_type;
+      m_document_id = docId;
+      m_event_type = (MaterialTableEventType)eventType;
       m_material_index = index;
       if( pOldSettings!=IntPtr.Zero )
-        m_holder = new MaterialHolder(pOldSettings);
+        m_holder = new MaterialHolder(pOldSettings, true);
     }
 
     internal void Done()
     {
-      m_holder.Done();
+      if (m_holder != null) m_holder.Done();
     }
 
     RhinoDoc m_doc;
     public RhinoDoc Document
     {
-      get { return m_doc ?? (m_doc = RhinoDoc.FromId(m_docId)); }
+      get { return m_doc ?? (m_doc = RhinoDoc.FromId(m_document_id)); }
     }
 
     public MaterialTableEventType EventType
@@ -597,7 +1226,7 @@ namespace Rhino.DocObjects.Tables
     }
   }
 
-  public sealed class MaterialTable : IEnumerable<Material>, Rhino.Collections.IRhinoTable<Material>
+  public sealed class MaterialTable : IEnumerable<Material>, Collections.IRhinoTable<Material>
   {
     private readonly RhinoDoc m_doc;
     internal MaterialTable(RhinoDoc doc)
@@ -611,10 +1240,10 @@ namespace Rhino.DocObjects.Tables
       get { return m_doc; }
     }
 
-    const int idxMaterialCount = 0;
-    const int idxCurrentMaterialIndex = 1;
-    const int idxCurrentMaterialSource = 2;
-    const int idxAddDefaultMaterial = 3;
+    const int IDX_MATERIAL_COUNT = 0;
+    const int IDX_CURRENT_MATERIAL_INDEX = 1;
+    const int IDX_CURRENT_MATERIAL_SOURCE = 2;
+    const int IDX_ADD_DEFAULT_MATERIAL = 3;
 
     /// <summary>
     /// Returns number of materials in the material table, including deleted materials.
@@ -623,7 +1252,7 @@ namespace Rhino.DocObjects.Tables
     {
       get
       {
-        return UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, idxMaterialCount);
+        return UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, IDX_MATERIAL_COUNT);
       }
     }
 
@@ -636,13 +1265,13 @@ namespace Rhino.DocObjects.Tables
     /// <returns>
     /// If index is out of range, the current material is returned.
     /// </returns>
-    public DocObjects.Material this[int index]
+    public Material this[int index]
     {
       get
       {
         if (index < 0 || index >= Count)
           index = CurrentMaterialIndex;
-        return new Rhino.DocObjects.Material(index, m_doc);
+        return new Material(index, m_doc);
       }
     }
 
@@ -656,7 +1285,7 @@ namespace Rhino.DocObjects.Tables
     {
       get
       {
-        return UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, idxCurrentMaterialIndex);
+        return UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, IDX_CURRENT_MATERIAL_INDEX);
       }
       set
       {
@@ -671,7 +1300,7 @@ namespace Rhino.DocObjects.Tables
     {
       get
       {
-        int rc = UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, idxCurrentMaterialSource);
+        int rc = UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, IDX_CURRENT_MATERIAL_SOURCE);
         return (ObjectMaterialSource)rc;
       }
       set
@@ -686,7 +1315,7 @@ namespace Rhino.DocObjects.Tables
     /// <returns>The position of the new material in the table.</returns>
     public int Add()
     {
-      return UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, idxAddDefaultMaterial);
+      return UnsafeNativeMethods.CRhinoMaterialTable_GetInt(m_doc.m_docId, IDX_ADD_DEFAULT_MATERIAL);
     }
 
     /// <summary>
@@ -710,8 +1339,8 @@ namespace Rhino.DocObjects.Tables
     /// <returns>The position of the new material in the table.</returns>
     public int Add(Material material, bool reference)
     {
-      IntPtr pConstMaterial = material.ConstPointer();
-      return UnsafeNativeMethods.CRhinoMaterialTable_Add(m_doc.m_docId, pConstMaterial, reference);
+      IntPtr ptr_const_material = material.ConstPointer();
+      return UnsafeNativeMethods.CRhinoMaterialTable_Add(m_doc.m_docId, ptr_const_material, reference);
     }
 
     /// <summary>
@@ -750,10 +1379,10 @@ namespace Rhino.DocObjects.Tables
     /// true if successful. false if materialIndex is out of range or the settings attempt
     /// to lock or hide the current material.
     /// </returns>
-    public bool Modify(Rhino.DocObjects.Material newSettings, int materialIndex, bool quiet)
+    public bool Modify(Material newSettings, int materialIndex, bool quiet)
     {
-      IntPtr pConstMaterial = newSettings.ConstPointer();
-      return UnsafeNativeMethods.CRhinoMaterialTable_ModifyMaterial(m_doc.m_docId, pConstMaterial, materialIndex, quiet);
+      IntPtr ptr_const_material = newSettings.ConstPointer();
+      return UnsafeNativeMethods.CRhinoMaterialTable_ModifyMaterial(m_doc.m_docId, ptr_const_material, materialIndex, quiet);
     }
 
     public bool ResetMaterial(int materialIndex)
@@ -778,11 +1407,11 @@ namespace Rhino.DocObjects.Tables
     #region enumerator
     public IEnumerator<Material> GetEnumerator()
     {
-      return new Rhino.Collections.TableEnumerator<MaterialTable, Material>(this);
+      return new Collections.TableEnumerator<MaterialTable, Material>(this);
     }
     System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator()
     {
-      return new Rhino.Collections.TableEnumerator<MaterialTable, Material>(this);
+      return new Collections.TableEnumerator<MaterialTable, Material>(this);
     }
     #endregion
   }

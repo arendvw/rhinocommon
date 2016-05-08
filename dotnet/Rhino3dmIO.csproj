@@ -12,6 +12,7 @@
     <AssemblyName>Rhino3dmIO</AssemblyName>
     <TargetFrameworkVersion>v4.0</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
+    <TargetFrameworkProfile />
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x86'">
     <DebugSymbols>true</DebugSymbols>
@@ -52,15 +53,33 @@
     <CodeAnalysisIgnoreBuiltInRuleSets>false</CodeAnalysisIgnoreBuiltInRuleSets>
     <CodeAnalysisIgnoreBuiltInRules>false</CodeAnalysisIgnoreBuiltInRules>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|AnyCPU'">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\Debug\</OutputPath>
+    <DefineConstants>TRACE;DEBUG;OPENNURBS_SDK</DefineConstants>
+    <DebugType>full</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisIgnoreBuiltInRules>false</CodeAnalysisIgnoreBuiltInRules>
+    <CodeAnalysisFailOnMissingRules>false</CodeAnalysisFailOnMissingRules>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|AnyCPU'">
+    <OutputPath>bin\Release\</OutputPath>
+    <DefineConstants>TRACE;OPENNURBS_SDK;MULTIARCH</DefineConstants>
+    <Optimize>true</Optimize>
+    <DebugType>pdbonly</DebugType>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <ErrorReport>prompt</ErrorReport>
+    <CodeAnalysisIgnoreBuiltInRuleSets>false</CodeAnalysisIgnoreBuiltInRuleSets>
+    <CodeAnalysisIgnoreBuiltInRules>false</CodeAnalysisIgnoreBuiltInRules>
+  </PropertyGroup>
   <ItemGroup>
     <Reference Include="System" />
     <Reference Include="System.Drawing" />
-    <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
     <Compile Include="AutoNativeMethods.cs" />
-    <Compile Include="AutoNativeMethodsRdk.cs" />
     <Compile Include="hostutils.cs" />
     <Compile Include="Import.cs" />
     <Compile Include="interop.cs" />
@@ -106,6 +125,7 @@
     <Compile Include="opennurbs\opennurbs_gl.cs" />
     <Compile Include="opennurbs\opennurbs_group.cs" />
     <Compile Include="opennurbs\opennurbs_hatch.cs" />
+    <Compile Include="opennurbs\opennurbs_iepsiloncomparable.cs" />
     <Compile Include="opennurbs\opennurbs_instance.cs" />
     <Compile Include="opennurbs\opennurbs_intersect.cs" />
     <Compile Include="opennurbs\opennurbs_intersectionevents.cs" />
@@ -279,53 +299,19 @@
     <Compile Include="rhino\rhinosdkunrollsrf.cs" />
     <Compile Include="rhino\rhinosdkview.cs" />
     <Compile Include="rhino\rhinosdkviewport.cs" />
-    <Compile Include="UI\ComboListBox.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\ComboListBox.Designer.cs">
-      <DependentUpon>ComboListBox.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\Dialogs.cs" />
-    <Compile Include="UI\EditBox.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\EditBox.Designer.cs">
-      <DependentUpon>EditBox.cs</DependentUpon>
-    </Compile>
-    <Compile Include="UI\ListBox.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\ListBox.Designer.cs">
-      <DependentUpon>ListBox.cs</DependentUpon>
-    </Compile>
     <Compile Include="UI\Localization.cs" />
     <Compile Include="UI\LocalizationStringTable.cs" />
     <Compile Include="UI\LocalizationUtils.cs" />
-    <Compile Include="UI\StringBox.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="UI\StringBox.Designer.cs">
-      <DependentUpon>StringBox.cs</DependentUpon>
-    </Compile>
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="UI\ComboListBox.resx">
-      <DependentUpon>ComboListBox.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\EditBox.resx">
-      <DependentUpon>EditBox.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\ListBox.resx">
-      <DependentUpon>ListBox.cs</DependentUpon>
-    </EmbeddedResource>
-    <EmbeddedResource Include="UI\StringBox.resx">
-      <DependentUpon>StringBox.cs</DependentUpon>
-    </EmbeddedResource>
+    <Compile Include="UnsafeNativeMethods.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="RDN_StrongName.snk" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <PropertyGroup>
+    <PostBuildEvent>
+    </PostBuildEvent>
+  </PropertyGroup>
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.
   <Target Name="BeforeBuild">
@@ -333,4 +319,14 @@
   <Target Name="AfterBuild">
   </Target>
   -->
+  <ProjectExtensions>
+    <MonoDevelop>
+      <Properties>
+        <Policies>
+          <TextStylePolicy TabWidth="2" IndentWidth="2" inheritsSet="VisualStudio" inheritsScope="text/plain" scope="text/x-csharp" />
+          <CSharpFormattingPolicy inheritsSet="Mono" inheritsScope="text/x-csharp" scope="text/x-csharp" />
+        </Policies>
+      </Properties>
+    </MonoDevelop>
+  </ProjectExtensions>
 </Project>

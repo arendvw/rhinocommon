@@ -1,6 +1,7 @@
 #pragma warning disable 1591
 using System;
 using System.Runtime.Serialization;
+using Rhino.Runtime.InteropWrappers;
 
 namespace Rhino.DocObjects
 {
@@ -86,7 +87,11 @@ namespace Rhino.DocObjects
 
     public ObjectAttributes()
     {
+#if RHINO_SDK
       IntPtr ptr = UnsafeNativeMethods.CRhinoObjectAttributes_New(IntPtr.Zero);
+#else
+      IntPtr ptr = UnsafeNativeMethods.ON_3dmObjectAttributes_New(IntPtr.Zero);
+#endif
       ConstructNonConstObject(ptr);
     }
 
@@ -103,7 +108,11 @@ namespace Rhino.DocObjects
     public ObjectAttributes Duplicate()
     {
       IntPtr pThis = ConstPointer();
+#if RHINO_SDK
       IntPtr pNew = UnsafeNativeMethods.CRhinoObjectAttributes_New(pThis);
+#else
+      IntPtr pNew = UnsafeNativeMethods.ON_3dmObjectAttributes_New(pThis);
+#endif
       if (IntPtr.Zero == pNew)
         return null;
       return new ObjectAttributes(pNew);
@@ -203,6 +212,11 @@ namespace Rhino.DocObjects
     /// render material is used.  See ON_3dmObjectAttributes::MaterialSource() to
     /// determine where to get the definition of the object's render material.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_modifyobjectcolor.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_modifyobjectcolor.cs' lang='cs'/>
+    /// <code source='examples\py\ex_modifyobjectcolor.py' lang='py'/>
+    /// </example>
     public ObjectColorSource ColorSource
     {
       get
@@ -402,7 +416,7 @@ namespace Rhino.DocObjects
     string GetString(int which)
     {
       IntPtr ptr = ConstPointer();
-      using (Rhino.Runtime.StringHolder sh = new Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         UnsafeNativeMethods.ON_3dmObjectAttributes_GetSetString(ptr, which, false, null, pString);
@@ -447,6 +461,11 @@ namespace Rhino.DocObjects
     /// OpenNURBS object in a model is on some layer.  The object's layer
     /// is specified by zero based indicies into the ON_Layer array.</para>
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_moveobjectstocurrentlayer.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_moveobjectstocurrentlayer.cs' lang='cs'/>
+    /// <code source='examples\py\ex_moveobjectstocurrentlayer.py' lang='py'/>
+    /// </example>
     public int LayerIndex
     {
       get { return GetInt(idxLayerIndex); }
@@ -501,7 +520,7 @@ namespace Rhino.DocObjects
     {
       IntPtr ptr = ConstPointer();
       int abgr = UnsafeNativeMethods.ON_3dmObjectAttributes_GetSetColor(ptr, which, false, 0);
-      return System.Drawing.ColorTranslator.FromWin32(abgr);
+      return Rhino.Runtime.Interop.ColorFromWin32(abgr);
     }
     void SetColor(int which, System.Drawing.Color c)
     {
@@ -510,9 +529,40 @@ namespace Rhino.DocObjects
       UnsafeNativeMethods.ON_3dmObjectAttributes_GetSetColor(ptr, which, true, argb);
     }
 
+#if RDK_CHECKED
+    /// <summary>
+    /// Gets all object decals associated with this object.
+    /// </summary>
+    public Render.Decals Decals
+    {
+      get { return (m_decals ?? (m_decals = new Render.Decals(this))); }
+    }
+    private Render.Decals m_decals;
+#endif
+
+    /// <summary>
+    /// If you are developing a high quality plug-in renderer, and a user is
+    /// assigning a custom render material to this object, then add rendering
+    /// material information to the MaterialRefs dictionary.
+    /// 
+    /// Note to developers:
+    ///  As soon as the MaterialRefs dictionary contains items rendering
+    ///  material queries slow down.  Do not populate the MaterialRefs
+    /// dictionary when setting the MaterialIndex will take care of your needs.
+    /// </summary>
+    public MaterialRefs MaterialRefs
+    {
+      get { return m_material_refs ?? (m_material_refs = new MaterialRefs(this)); }
+    }
+    private MaterialRefs m_material_refs;
     /// <summary>
     /// If ON::color_from_object == ColorSource, then color is the object's display color.
     /// </summary>
+    /// <example>
+    /// <code source='examples\vbnet\ex_modifyobjectcolor.vb' lang='vbnet'/>
+    /// <code source='examples\cs\ex_modifyobjectcolor.cs' lang='cs'/>
+    /// <code source='examples\py\ex_modifyobjectcolor.py' lang='py'/>
+    /// </example>
     public System.Drawing.Color ObjectColor
     {
       get { return GetColor(idxColor); }
@@ -527,6 +577,17 @@ namespace Rhino.DocObjects
       set { SetColor(idxPlotColor, value); }
     }
 
+    /// <summary>
+    /// A mapping from any plugin source is associated with these attributes
+    /// Need to do this here to respond correctly to ModifyObjectAttributes event
+    /// </summary>
+    public bool HasMapping
+    {
+      get { return UnsafeNativeMethods.ON_3dmObjectAttributes_HasMapping(NonConstPointer()); }
+    }
+
+
+
 #if RHINO_SDK
     public System.Drawing.Color DrawColor(RhinoDoc document)
     {
@@ -536,7 +597,28 @@ namespace Rhino.DocObjects
     {
       IntPtr pConstThis = ConstPointer();
       int abgr = UnsafeNativeMethods.CRhinoObjectAttributes_DrawColor(pConstThis, document.m_docId, viewportId);
-      return System.Drawing.ColorTranslator.FromWin32(abgr);
+      return Rhino.Runtime.Interop.ColorFromWin32(abgr);
+    }
+
+    public System.Drawing.Color ComputedPlotColor(RhinoDoc document)
+    {
+      return ComputedPlotColor(document, Guid.Empty);
+    }
+    public System.Drawing.Color ComputedPlotColor(RhinoDoc document, Guid viewportId)
+    {
+      IntPtr pConstThis = ConstPointer();
+      int abgr = UnsafeNativeMethods.CRhinoObjectAttributes_PlotColor(pConstThis, document.m_docId, viewportId);
+      return Rhino.Runtime.Interop.ColorFromWin32(abgr);
+    }
+
+    public double ComputedPlotWeight(RhinoDoc document)
+    {
+      return ComputedPlotWeight(document, Guid.Empty);
+    }
+    public double ComputedPlotWeight(RhinoDoc document, Guid viewportId)
+    {
+      IntPtr pConstThis = ConstPointer();
+      return UnsafeNativeMethods.CRhinoObjectAttributes_PlotWeight(pConstThis, document.m_docId, viewportId);
     }
 #endif
 

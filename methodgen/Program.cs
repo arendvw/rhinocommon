@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 
 namespace MethodGen
@@ -18,12 +19,14 @@ namespace MethodGen
   {
     public static string m_namespace;
     public static bool m_includeRhinoDeclarations = true;
+    public static List<string> m_extra_usings = new List<string>();
 
     static void Main(string[] args)
     {
       bool rhinocommon_build = false;
       string dirCPP=null;
       string dirCS=null;
+      List<string> preprocessor_defines = null;
       if (args.Length >= 2)
       {
         dirCPP = args[0];
@@ -40,6 +43,21 @@ namespace MethodGen
           string[] lines = System.IO.File.ReadAllLines(path);
           dirCPP = System.IO.Path.GetFullPath(lines[0]);
           dirCS = System.IO.Path.GetFullPath(lines[1]);
+          for (int i = 2; i < lines.Length; i++)
+          {
+            if (lines[i].StartsWith("using"))
+            {
+              m_includeRhinoDeclarations = false;
+              m_extra_usings.Add(lines[i].Trim());
+            }
+            if (lines[i].StartsWith("define"))
+            {
+              if (preprocessor_defines == null)
+                preprocessor_defines = new List<string>();
+              string define = lines[i].Substring("define".Length).Trim();
+              preprocessor_defines.Add(define);
+            }
+          }
         }
         else
         {
@@ -75,11 +93,11 @@ namespace MethodGen
       // get all of the .cpp files
       string[] files = System.IO.Directory.GetFiles(dirCPP, "*.cpp");
       foreach (var file in files)
-        nmd.BuildDeclarations(file);
+        nmd.BuildDeclarations(file, preprocessor_defines);
       // get all of the .h files
       files = System.IO.Directory.GetFiles(dirCPP, "*.h");
       foreach (var file in files)
-        nmd.BuildDeclarations(file);
+        nmd.BuildDeclarations(file, preprocessor_defines);
 
       string outputfile = System.IO.Path.Combine(dirCS, "AutoNativeMethods.cs");
       nmd.Write(outputfile, "lib");
@@ -88,7 +106,7 @@ namespace MethodGen
       {
         if (!GetProjectDirectories(out dirCPP, out dirCS, true))
         {
-          System.Console.WriteLine("ERROR: Unable to locate RDK project directoies");
+          System.Console.WriteLine("Can't locate RDK project directories. This is OK if you are compiling for standalone openNURBS build");
           return;
         }
         //write native methods for rdk
@@ -97,11 +115,11 @@ namespace MethodGen
         // get all of the .cpp files
         files = System.IO.Directory.GetFiles(dirCPP, "*.cpp");
         foreach (var file in files)
-          nmd.BuildDeclarations(file);
+          nmd.BuildDeclarations(file, preprocessor_defines);
         // get all of the .h files
         files = System.IO.Directory.GetFiles(dirCPP, "*.h");
         foreach (var file in files)
-          nmd.BuildDeclarations(file);
+          nmd.BuildDeclarations(file, preprocessor_defines);
 
         outputfile = System.IO.Path.Combine(dirCS, "AutoNativeMethodsRdk.cs");
         nmd.Write(outputfile, "librdk");
@@ -110,6 +128,9 @@ namespace MethodGen
 
     static bool GetProjectDirectories(out string c, out string dotnet, bool rdk)
     {
+			c = null;
+			dotnet = null;
+
       bool rc = false;
       // start with the directory that this executable is located in and work up
       string path = System.Reflection.Assembly.GetExecutingAssembly().Location;
@@ -117,7 +138,7 @@ namespace MethodGen
       System.IO.DirectoryInfo dirInfo = new System.IO.DirectoryInfo(path);
       while(true)
       {
-        if( string.Compare(dirInfo.Name, "rhinocommon", true)==0 )
+        if( string.Compare(dirInfo.Name, "RhinoCommon", true)==0 )
         {
           if( rdk )
             c = System.IO.Path.Combine(dirInfo.FullName, "c_rdk");
@@ -132,7 +153,10 @@ namespace MethodGen
         }
         // get parent directory
         dirInfo = dirInfo.Parent;
+				if (dirInfo == null)
+					break;
       }
+
       if (!rc)
       {
         c = null;

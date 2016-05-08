@@ -67,6 +67,43 @@ RH_C_FUNCTION void ON_ComponentIndexArray_CopyValues( const ON_SimpleArray<ON_CO
   }
 }
 
+///////////////////////////////////////////////////////////////////////////////////////
+
+RH_C_FUNCTION ON_2dPointArray* ON_2dPointArray_New(int capacity)
+{
+  if( capacity < 1 )
+    return new ON_2dPointArray();
+  return new ON_2dPointArray(capacity);
+}
+
+RH_C_FUNCTION void ON_2dPointArray_Delete( ON_2dPointArray* pArray )
+{
+  if( pArray )
+    delete pArray;
+}
+
+
+RH_C_FUNCTION int ON_2dPointArray_Count( const ON_2dPointArray* pArray )
+{
+  int rc = 0;
+  if( pArray )
+    rc = pArray->Count();
+  return rc;
+}
+
+RH_C_FUNCTION void ON_2dPointArray_CopyValues( const ON_2dPointArray* pArray, /*ARRAY*/ON_2dPoint* pts )
+{
+  if( pArray && pts )
+  {
+    int count = pArray->Count();
+    if( count > 0 )
+    {
+      const ON_2dPoint* source = pArray->Array();
+      ::memcpy(pts, source, count * sizeof(ON_2dPoint));
+    }
+  }
+}
+
 
 
 ///////////////////////////////////////////////////////////////////////////////////////
@@ -108,10 +145,15 @@ RH_C_FUNCTION void ON_3dPointArray_CopyValues( const ON_3dPointArray* pArray, /*
 
 /////////////////////////////////////////////////////////////////////////////////
 
-RH_C_FUNCTION ON_SimpleArray<int>* ON_IntArray_New()
+RH_C_FUNCTION ON_SimpleArray<int>* ON_IntArray_New(/*ARRAY*/const int* vals, int count)
 {
-  return new ON_SimpleArray<int>();
+  if( 0==vals || count<1 )
+    return new ON_SimpleArray<int>();
+  ON_SimpleArray<int>* rc = new ON_SimpleArray<int>(count);
+  rc->Append(count, vals);
+  return rc;
 }
+
 
 RH_C_FUNCTION void ON_IntArray_CopyValues(const ON_SimpleArray<int>* ptr, /*ARRAY*/int* vals)
 {
@@ -396,7 +438,7 @@ RH_C_FUNCTION ON_SimpleArray<ON_BezierCurve*>* ON_SimpleArray_BezierCurveNew()
   return new ON_SimpleArray<ON_BezierCurve*>();
 }
 
-RH_C_FUNCTION void ON_SimpleArray_BezierCurveDelete(ON_SimpleArray<ON_BezierCurve>* pBezArray)
+RH_C_FUNCTION void ON_SimpleArray_BezierCurveDelete(ON_SimpleArray<ON_BezierCurve*>* pBezArray)
 {
   if( pBezArray )
     delete pBezArray;
@@ -416,7 +458,9 @@ RH_C_FUNCTION void ON_BezierCurve_Delete(ON_BezierCurve* pBez)
     delete pBez;
 }
 
-
+// The following is available in opennurbs but only used the Rhino SDK
+// version of RhinoCommon.
+#if !defined(OPENNURBS_BUILD)
 RH_C_FUNCTION ON_SimpleArray<const ON_3dmObjectAttributes*>* ON_SimpleArray_3dmObjectAttributes_New()
 {
   return new ON_SimpleArray<const ON_3dmObjectAttributes*>();
@@ -434,6 +478,20 @@ RH_C_FUNCTION void ON_SimpleArray_3dmObjectAttributes_Add( ON_SimpleArray<const 
     pArray->Append(pAttributes);
 }
 
+RH_C_FUNCTION int ON_SimpleArray_3dmObjectAttributes_Count( ON_SimpleArray<const ON_3dmObjectAttributes*>* pArray )
+{
+  if( pArray )
+    return pArray->Count();
+  return 0;
+}
+
+RH_C_FUNCTION const ON_3dmObjectAttributes* ON_SimpleArray_3dmObjectAttributes_Get( ON_SimpleArray<const ON_3dmObjectAttributes*>* pArray, int index )
+{
+  if( pArray && index>=0 && index<pArray->Count() )
+    return (*pArray)[index];
+  return 0;
+}
+#endif
 /////////////////////////////////////////////////////////////////////////////
 // ON_SimpleArray<ON_Curve*> 
 
@@ -476,3 +534,35 @@ RH_C_FUNCTION void ON_CurveArray_Delete(ON_SimpleArray<ON_Curve*>* arrayPtr)
     delete arrayPtr;
 }
 
+////////////////////////////////////////////////////////////
+
+RH_C_FUNCTION ON_ClassArray<ON_ObjRef>* ON_ClassArrayON_ObjRef_New()
+{
+  return new ON_ClassArray<ON_ObjRef>();
+}
+
+RH_C_FUNCTION int ON_ClassArrayON_ObjRef_Count(const ON_ClassArray<ON_ObjRef>* pConstObjRefArray)
+{
+  if( pConstObjRefArray )
+    return pConstObjRefArray->Count();
+  return 0;
+}
+
+RH_C_FUNCTION void ON_ClassArrayON_ObjRef_Append(ON_ClassArray<ON_ObjRef>* pObjRefArray, const ON_ObjRef* pConstObjRef)
+{
+  if( pObjRefArray && pConstObjRef )
+    pObjRefArray->Append(*pConstObjRef);
+}
+
+RH_C_FUNCTION void ON_ClassArrayON_ObjRef_Delete(ON_ClassArray<ON_ObjRef>* pObjRefArray)
+{
+  if( pObjRefArray )
+    delete pObjRefArray;
+}
+
+RH_C_FUNCTION const ON_ObjRef* ON_ClassArrayON_ObjRef_Get(const ON_ClassArray<ON_ObjRef>* pConstObjRefArray, int index)
+{
+  if( pConstObjRefArray )
+    return pConstObjRefArray->At(index);
+  return 0;
+}

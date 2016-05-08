@@ -1,62 +1,36 @@
 #pragma warning disable 1591
 using System;
+using Rhino.Runtime.InteropWrappers;
 
-#if RDK_UNCHECKED
+#if RDK_CHECKED
 namespace Rhino.Render
 {
-  public class Utilities
+  public static class Utilities
   {
     /// <summary>
-    /// Returns the RDK_SDK_VERSION this RDK was built with.
+    /// Set default render application
     /// </summary>
-    public static String RdkVersion
+    /// <param name="pluginId">ID of render plug-in</param>
+    /// <returns>
+    /// True if plug-in found and loaded successfully.  False if pluginId is
+    ///  invalid or was unable to load plug-in
+    /// </returns>
+    public static bool SetDefaultRenderPlugIn(Guid pluginId)
     {
-      get
-      {
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
-        {
-          IntPtr pString = sh.NonConstPointer();
-          UnsafeNativeMethods.Rdk_Globals_RdkVersion(pString);
-          return sh.ToString();
-        }
-        
-      }
+      return UnsafeNativeMethods.CRhinoApp_SetDefaultRenderApp(pluginId);
     }
 
     /// <summary>
-    /// Returns the build date of this RDK - implemented as return __DATE__;
+    /// Get the plug-in Id for the default render plug-in
     /// </summary>
-    public static String RdkBuildDate
+    public static Guid DefaultRenderPlugInId
     {
       get
       {
-        using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
-        {
-          IntPtr pString = sh.NonConstPointer();
-          UnsafeNativeMethods.Rdk_Globals_RdkBuildDate(pString);
-          return sh.ToString();
-        }
-        
+        return UnsafeNativeMethods.CRhinoApp_GetDefaultRenderApp();
       }
     }
 
-    /// <summary>
-    /// Returns the RDK_MAJOR_VERSION this RDK was built with.
-    /// </summary>
-    /// <returns>The Rdk major version.</returns>
-    public static int RdkMajorVersion()    {   return UnsafeNativeMethods.Rdk_Globals_RdkMajorVersion();    }
-    
-    /// <summary>
-    /// Returns the RDK_MINOR_VERSION this RDK was built with.
-    /// </summary>
-    /// <returns>The Rdk minor version.</returns>
-    public static int RdkMinorVersion()   {    return UnsafeNativeMethods.Rdk_Globals_RdkMinorVersion();    }
-
-    /// <summary>
-    /// Returns the RDK_BETA_RELEASE this RDK was built with.
-    /// </summary>
-    /// <returns>The Rdk beta release.</returns>
-    public static int RdkBetaRelease()   {    return UnsafeNativeMethods.Rdk_Globals_RdkBetaRelease();    }
 
     internal static bool ShowIncompatibleContent(RenderContentKind kind) { return 1 == UnsafeNativeMethods.Rdk_Globals_ShowIncompatibleContent(RenderContent.KindString(kind)); }
     internal static void SetShowIncompatibleContent(RenderContentKind kind, bool bShow) { UnsafeNativeMethods.Rdk_Globals_SetShowIncompatbileContent(RenderContent.KindString(kind), bShow); }
@@ -88,6 +62,13 @@ namespace Rhino.Render
       set { SetShowIncompatibleContent(RenderContentKind.Texture, value); }
     }
 
+    /// <summary>
+    /// Queries whether or not the Safe Frame is visible.
+    /// </summary>
+    public static bool SafeFrameEnabled { get { return 1 == UnsafeNativeMethods.Rdk_Globals_IsSafeFrameVisible(); } }
+
+#if RDK_UNCHECKED
+    /*
     public enum ChooseContentFlags : int
     {
       /// <summary>
@@ -99,7 +80,7 @@ namespace Rhino.Render
       /// </summary>
 	    EditButton = 2,
     };
-    /*
+    
     /// <summary>
     /// Allows the user to choose a content by displaying the Content Chooser dialog.
 	  /// The dialog will have OK, Cancel and Help buttons, and optional New and Edit buttons.
@@ -114,67 +95,8 @@ namespace Rhino.Render
       return 1 == UnsafeNativeMethods.Rdk_Globals_ChooseContentEx(ref instanceId, RenderContent.KindString(kinds), (int)flags, doc.m_docId);
     }
     */
-    internal static bool IsKindEditorVisible(RenderContentKind kind)
-    {
-      return 1==UnsafeNativeMethods.Rdk_Globals_IsContentEditorVisible(RenderContent.KindString(kind));
-    }
 
-    /// <summary>
-    /// Queries whether or not the material editor is visible.
-    /// </summary>
-    public static bool IsMaterialEditorVisible { get { return IsKindEditorVisible(RenderContentKind.Material); } }
-
-    /// <summary>
-    /// Queries whether or not the environment editor is visible.
-    /// </summary>
-    public static bool IsEnvironmentEditorVisible { get { return IsKindEditorVisible(RenderContentKind.Environment); } }
-
-    /// <summary>
-    /// Queries whether or not the texture palette is visible.
-    /// </summary>
-    public static bool IsTexturePaletteVisible { get { return IsKindEditorVisible(RenderContentKind.Texture); } }
-
-    /// <summary>
-    /// Queries whether or not the sun dock bar is visible.
-    /// </summary>
-    public static bool IsSunDockBarVisible   { get { return 1==UnsafeNativeMethods.Rdk_Globals_IsSunDockBarVisible(); } }
-
-    /// <summary>
-    /// Queries whether or not the view dock bar is visible.
-    /// </summary>
-    public static bool IsViewDockBarVisible   { get { return 1==UnsafeNativeMethods.Rdk_Globals_IsViewDockBarVisible(); } }
-
-    /// <summary>
-    /// Queries whether or not the Safe Frame is visible.
-    /// </summary>
-    public static bool IsSafeFrameEnabled    { get { return 1==UnsafeNativeMethods.Rdk_Globals_IsSafeFrameVisible(); } }
-
-        
-    /// <summary>
-    /// Constructs a new <see cref="RenderEnvironment"/> from a <see cref="SimulatedEnvironment"/>.
-    /// </summary>
-    /// <param name="environment">The environment to create the basic environment from.</param>
-    /// <returns>A new basic environment.</returns>
-    public static RenderEnvironment NewBasicEnvironment(SimulatedEnvironment environment)
-    {
-      NativeRenderEnvironment newEnvironment = RenderContent.FromPointer(UnsafeNativeMethods.Rdk_Globals_NewBasicEnvironment(environment == null ? IntPtr.Zero : environment.ConstPointer())) as NativeRenderEnvironment;
-      if( newEnvironment!=null )
-        newEnvironment.AutoDelete = true;
-      return newEnvironment;
-    }
-
-    /// <summary>
-    /// Constructs a new basic texture from a SimulatedTexture.
-    /// </summary>
-    /// <param name="texture">The texture to create the basic texture from.</param>
-    /// <returns>A new render texture.</returns>
-    public static RenderTexture NewBitmapTexture(SimulatedTexture texture)
-    {
-      NativeRenderTexture newTexture = RenderContent.FromPointer(UnsafeNativeMethods.Rdk_Globals_NewBasicTexture(texture == null ? IntPtr.Zero : texture.ConstPointer())) as NativeRenderTexture;
-      if( newTexture!=null )
-        newTexture.AutoDelete = true;
-      return newTexture;
-    }
+       
 
     /*
     /// <summary>
@@ -210,47 +132,6 @@ namespace Rhino.Render
     }
 
     /// <summary>
-    /// Accesses the material table.
-    /// </summary>
-    /// <param name="doc">A Rhino document.</param>
-    /// <returns>The materials list.</returns>
-    public static ContentList MaterialList(RhinoDoc doc)
-    {
-      return new ContentList(RenderContentKind.Material, doc);
-    }
-
-    /// <summary>
-    /// Accesses the environment table.
-    /// </summary>
-    /// <param name="doc">A Rhino document.</param>
-    /// <returns>The environments list.</returns>
-    public static ContentList EnvironmentList(RhinoDoc doc)
-    {
-      return new ContentList(RenderContentKind.Environment, doc);
-    }
-
-    /// <summary>
-    /// Accesses the texture table.
-    /// </summary>
-    /// <param name="doc">A Rhino document.</param>
-    /// <returns>The textures list.</returns>
-    public static ContentList TextureList(RhinoDoc doc)
-    {
-      return new ContentList(RenderContentKind.Texture, doc);
-    }
-
-    // <summary>
-    // Accesses any content table given a (single) kind.
-    // </summary>
-    // <param name="kind">A single kind.</param>
-    // <param name="doc">A Rhino document.</param>
-    // <returns>The (render content kind) list.</returns>
-    //public static ContentList ContentList(RenderContentKind kind, RhinoDoc doc)
-    //{
-    //  return new ContentList(kind, doc);
-    //}
-
-    /// <summary>
     /// Prompts the user for a save file name and the width, height and depth of an image to be saved.
     /// </summary>
     /// <param name="filename">The original file path.</param>
@@ -260,7 +141,7 @@ namespace Rhino.Render
     /// <returns>The new file name.</returns>
     public static string PromptForSaveImageFileParameters(string filename, ref int width, ref int height, ref int colorDepth)
     {
-      using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         bool bRet = 1==UnsafeNativeMethods.Rdk_Globals_PromptForSaveImageFileParams(filename, ref width, ref height, ref colorDepth, pString);
@@ -328,7 +209,7 @@ namespace Rhino.Render
     /// <returns>The found file.</returns>
     public static string FindFile(string fullPathToFile)
     {
-      using (Rhino.Runtime.StringHolder sh = new Rhino.Runtime.StringHolder())
+      using (var sh = new StringHolder())
       {
         IntPtr pString = sh.NonConstPointer();
         bool found = (1 == UnsafeNativeMethods.Rdk_Globals_FindFile(fullPathToFile, pString));
@@ -383,12 +264,8 @@ namespace Rhino.Render
       \return Interface to automatic UI. This will be NULL only if RDK or plug-in is
       not correctly initialized. */
     //RHRDK_SDK IRhRdkAutomaticUI* RhRdkNewAutomaticUI(CWnd* pParent, IRhRdkAutomaticUI::eStyle style);
-
-
+#endif
   }
 }
-
-
-
 
 #endif
